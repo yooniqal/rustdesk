@@ -118,6 +118,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Bake CubeRemote server/key/appname
+        shell: bash
+        run: |
+          CFG=libs/hbb_common/src/config.rs
+          if [ -f "$CFG" ]; then
+            sed -i 's#pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["[^"]*"\];#pub const RENDEZVOUS_SERVERS: \&[\&str] = \&["relay.ceomate.co.kr"];#' "$CFG"
+            sed -i 's#pub const RS_PUB_KEY: &str = "[^"]*";#pub const RS_PUB_KEY: \&str = "HX+NlkkenmQlnQZe95RcUeB0VZFyVA4v32Na2xV43+s=";#' "$CFG"
+            sed -i 's#RwLock::new("RustDesk".to_owned())#RwLock::new("CubeRemote".to_owned())#' "$CFG"
+            echo "---- baked ----"; grep -nE 'RENDEZVOUS_SERVERS: &|RS_PUB_KEY: &str|APP_NAME: RwLock' "$CFG" || true
+          fi
+
       - name: Restore bridge files
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -407,6 +418,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Bake CubeRemote server/key/appname
+        shell: bash
+        run: |
+          CFG=libs/hbb_common/src/config.rs
+          if [ -f "$CFG" ]; then
+            sed -i 's#pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["[^"]*"\];#pub const RENDEZVOUS_SERVERS: \&[\&str] = \&["relay.ceomate.co.kr"];#' "$CFG"
+            sed -i 's#pub const RS_PUB_KEY: &str = "[^"]*";#pub const RS_PUB_KEY: \&str = "HX+NlkkenmQlnQZe95RcUeB0VZFyVA4v32Na2xV43+s=";#' "$CFG"
+            sed -i 's#RwLock::new("RustDesk".to_owned())#RwLock::new("CubeRemote".to_owned())#' "$CFG"
+            echo "---- baked ----"; grep -nE 'RENDEZVOUS_SERVERS: &|RS_PUB_KEY: &str|APP_NAME: RwLock' "$CFG" || true
+          fi
+
       - name: Install LLVM and Clang
         uses: rustdesk-org/install-llvm-action-32bit@6aa7d9ad3df84dff01cd4596dd0fc880a7f47fce # no release tag; commit 2026-05-26
         with:
@@ -558,6 +580,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Bake CubeRemote server/key/appname
+        shell: bash
+        run: |
+          CFG=libs/hbb_common/src/config.rs
+          if [ -f "$CFG" ]; then
+            sed -i 's#pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["[^"]*"\];#pub const RENDEZVOUS_SERVERS: \&[\&str] = \&["relay.ceomate.co.kr"];#' "$CFG"
+            sed -i 's#pub const RS_PUB_KEY: &str = "[^"]*";#pub const RS_PUB_KEY: \&str = "HX+NlkkenmQlnQZe95RcUeB0VZFyVA4v32Na2xV43+s=";#' "$CFG"
+            sed -i 's#RwLock::new("RustDesk".to_owned())#RwLock::new("CubeRemote".to_owned())#' "$CFG"
+            echo "---- baked ----"; grep -nE 'RENDEZVOUS_SERVERS: &|RS_PUB_KEY: &str|APP_NAME: RwLock' "$CFG" || true
+          fi
+
       - name: Install flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
@@ -682,6 +715,17 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
+
+      - name: Bake CubeRemote server/key/appname
+        shell: bash
+        run: |
+          CFG=libs/hbb_common/src/config.rs
+          if [ -f "$CFG" ]; then
+            sed -i 's#pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["[^"]*"\];#pub const RENDEZVOUS_SERVERS: \&[\&str] = \&["relay.ceomate.co.kr"];#' "$CFG"
+            sed -i 's#pub const RS_PUB_KEY: &str = "[^"]*";#pub const RS_PUB_KEY: \&str = "HX+NlkkenmQlnQZe95RcUeB0VZFyVA4v32Na2xV43+s=";#' "$CFG"
+            sed -i 's#RwLock::new("RustDesk".to_owned())#RwLock::new("CubeRemote".to_owned())#' "$CFG"
+            echo "---- baked ----"; grep -nE 'RENDEZVOUS_SERVERS: &|RS_PUB_KEY: &str|APP_NAME: RwLock' "$CFG" || true
+          fi
 
       - name: Import the codesign cert
         if: env.MACOS_P12_BASE64 != null
@@ -996,6 +1040,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Bake CubeRemote server/key/appname
+        shell: bash
+        run: |
+          CFG=libs/hbb_common/src/config.rs
+          if [ -f "$CFG" ]; then
+            sed -i 's#pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["[^"]*"\];#pub const RENDEZVOUS_SERVERS: \&[\&str] = \&["relay.ceomate.co.kr"];#' "$CFG"
+            sed -i 's#pub const RS_PUB_KEY: &str = "[^"]*";#pub const RS_PUB_KEY: \&str = "HX+NlkkenmQlnQZe95RcUeB0VZFyVA4v32Na2xV43+s=";#' "$CFG"
+            sed -i 's#RwLock::new("RustDesk".to_owned())#RwLock::new("CubeRemote".to_owned())#' "$CFG"
+            echo "---- baked ----"; grep -nE 'RENDEZVOUS_SERVERS: &|RS_PUB_KEY: &str|APP_NAME: RwLock' "$CFG" || true
+          fi
+
       - name: Install flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
@@ -1268,6 +1323,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Bake CubeRemote server/key/appname
+        shell: bash
+        run: |
+          CFG=libs/hbb_common/src/config.rs
+          if [ -f "$CFG" ]; then
+            sed -i 's#pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["[^"]*"\];#pub const RENDEZVOUS_SERVERS: \&[\&str] = \&["relay.ceomate.co.kr"];#' "$CFG"
+            sed -i 's#pub const RS_PUB_KEY: &str = "[^"]*";#pub const RS_PUB_KEY: \&str = "HX+NlkkenmQlnQZe95RcUeB0VZFyVA4v32Na2xV43+s=";#' "$CFG"
+            sed -i 's#RwLock::new("RustDesk".to_owned())#RwLock::new("CubeRemote".to_owned())#' "$CFG"
+            echo "---- baked ----"; grep -nE 'RENDEZVOUS_SERVERS: &|RS_PUB_KEY: &str|APP_NAME: RwLock' "$CFG" || true
+          fi
+
       - name: Install flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
@@ -1432,6 +1498,17 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
+
+      - name: Bake CubeRemote server/key/appname
+        shell: bash
+        run: |
+          CFG=libs/hbb_common/src/config.rs
+          if [ -f "$CFG" ]; then
+            sed -i 's#pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["[^"]*"\];#pub const RENDEZVOUS_SERVERS: \&[\&str] = \&["relay.ceomate.co.kr"];#' "$CFG"
+            sed -i 's#pub const RS_PUB_KEY: &str = "[^"]*";#pub const RS_PUB_KEY: \&str = "HX+NlkkenmQlnQZe95RcUeB0VZFyVA4v32Na2xV43+s=";#' "$CFG"
+            sed -i 's#RwLock::new("RustDesk".to_owned())#RwLock::new("CubeRemote".to_owned())#' "$CFG"
+            echo "---- baked ----"; grep -nE 'RENDEZVOUS_SERVERS: &|RS_PUB_KEY: &str|APP_NAME: RwLock' "$CFG" || true
+          fi
 
       - name: Set Swap Space
         if: ${{ matrix.job.arch == 'x86_64' }}
@@ -1763,6 +1840,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Bake CubeRemote server/key/appname
+        shell: bash
+        run: |
+          CFG=libs/hbb_common/src/config.rs
+          if [ -f "$CFG" ]; then
+            sed -i 's#pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["[^"]*"\];#pub const RENDEZVOUS_SERVERS: \&[\&str] = \&["relay.ceomate.co.kr"];#' "$CFG"
+            sed -i 's#pub const RS_PUB_KEY: &str = "[^"]*";#pub const RS_PUB_KEY: \&str = "HX+NlkkenmQlnQZe95RcUeB0VZFyVA4v32Na2xV43+s=";#' "$CFG"
+            sed -i 's#RwLock::new("RustDesk".to_owned())#RwLock::new("CubeRemote".to_owned())#' "$CFG"
+            echo "---- baked ----"; grep -nE 'RENDEZVOUS_SERVERS: &|RS_PUB_KEY: &str|APP_NAME: RwLock' "$CFG" || true
+          fi
+
       - name: Modify vcpkg.json for armv7
         if: matrix.job.vcpkg-triplet == 'arm-linux'
         run: |
@@ -1965,6 +2053,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Bake CubeRemote server/key/appname
+        shell: bash
+        run: |
+          CFG=libs/hbb_common/src/config.rs
+          if [ -f "$CFG" ]; then
+            sed -i 's#pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["[^"]*"\];#pub const RENDEZVOUS_SERVERS: \&[\&str] = \&["relay.ceomate.co.kr"];#' "$CFG"
+            sed -i 's#pub const RS_PUB_KEY: &str = "[^"]*";#pub const RS_PUB_KEY: \&str = "HX+NlkkenmQlnQZe95RcUeB0VZFyVA4v32Na2xV43+s=";#' "$CFG"
+            sed -i 's#RwLock::new("RustDesk".to_owned())#RwLock::new("CubeRemote".to_owned())#' "$CFG"
+            echo "---- baked ----"; grep -nE 'RENDEZVOUS_SERVERS: &|RS_PUB_KEY: &str|APP_NAME: RwLock' "$CFG" || true
+          fi
+
       - name: Download Binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -2039,6 +2138,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Bake CubeRemote server/key/appname
+        shell: bash
+        run: |
+          CFG=libs/hbb_common/src/config.rs
+          if [ -f "$CFG" ]; then
+            sed -i 's#pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["[^"]*"\];#pub const RENDEZVOUS_SERVERS: \&[\&str] = \&["relay.ceomate.co.kr"];#' "$CFG"
+            sed -i 's#pub const RS_PUB_KEY: &str = "[^"]*";#pub const RS_PUB_KEY: \&str = "HX+NlkkenmQlnQZe95RcUeB0VZFyVA4v32Na2xV43+s=";#' "$CFG"
+            sed -i 's#RwLock::new("RustDesk".to_owned())#RwLock::new("CubeRemote".to_owned())#' "$CFG"
+            echo "---- baked ----"; grep -nE 'RENDEZVOUS_SERVERS: &|RS_PUB_KEY: &str|APP_NAME: RwLock' "$CFG" || true
+          fi
+
       - name: Download Binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -2099,6 +2209,17 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
+
+      - name: Bake CubeRemote server/key/appname
+        shell: bash
+        run: |
+          CFG=libs/hbb_common/src/config.rs
+          if [ -f "$CFG" ]; then
+            sed -i 's#pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["[^"]*"\];#pub const RENDEZVOUS_SERVERS: \&[\&str] = \&["relay.ceomate.co.kr"];#' "$CFG"
+            sed -i 's#pub const RS_PUB_KEY: &str = "[^"]*";#pub const RS_PUB_KEY: \&str = "HX+NlkkenmQlnQZe95RcUeB0VZFyVA4v32Na2xV43+s=";#' "$CFG"
+            sed -i 's#RwLock::new("RustDesk".to_owned())#RwLock::new("CubeRemote".to_owned())#' "$CFG"
+            echo "---- baked ----"; grep -nE 'RENDEZVOUS_SERVERS: &|RS_PUB_KEY: &str|APP_NAME: RwLock' "$CFG" || true
+          fi
 
       - name: Prepare env
         run: |
