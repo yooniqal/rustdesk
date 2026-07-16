@@ -1283,10 +1283,16 @@ class InputModel {
     _relativeMouse.onWindowFocus();
   }
 
+  // CubeRemote: 북커버 트랙패드 등도 마우스처럼 취급한다.
+  // 손가락 터치(touch)만 제스처(터치) 경로로 보내고, 그 외 포인터(trackpad/mouse/stylus/unknown)는
+  // 마우스 이동/클릭으로 처리해 "안 눌러도 커서가 따라오게" 만든다.
+  bool _isMouseLike(ui.PointerDeviceKind kind) =>
+      kind != ui.PointerDeviceKind.touch;
+
   void onPointHoverImage(PointerHoverEvent e) {
     _stopFling = true;
     if (isViewOnly && !showMyCursor) return;
-    if (e.kind != ui.PointerDeviceKind.mouse) return;
+    if (!_isMouseLike(e.kind)) return;
 
     // May fix https://github.com/rustdesk/rustdesk/issues/13009
     if (isIOS && e.synthesized && e.position == Offset.zero && e.buttons == 0) {
@@ -1521,7 +1527,7 @@ class InputModel {
 
     // Track mouse down events for duplicate detection on iOS.
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    if (e.kind == ui.PointerDeviceKind.mouse) {
+    if (_isMouseLike(e.kind)) {
       if (!isPhysicalMouse.value) {
         isPhysicalMouse.value = true;
       }
@@ -1533,7 +1539,7 @@ class InputModel {
       _relativeMouse.updatePointerRegionTopLeftGlobal(e);
     }
 
-    if (e.kind != ui.PointerDeviceKind.mouse) {
+    if (!_isMouseLike(e.kind)) {
       // Ignore duplicate touch events that follow a recent mouse click (iOS Magic Mouse issue).
       if (isPhysicalMouse.value && _shouldIgnoreTouchAfterMouse(nowMs)) {
         return;
@@ -1564,7 +1570,7 @@ class InputModel {
       _relativeMouse.updatePointerRegionTopLeftGlobal(e);
     }
 
-    if (e.kind != ui.PointerDeviceKind.mouse) return;
+    if (!_isMouseLike(e.kind)) return;
     if (isPhysicalMouse.value) {
       // In relative mouse mode, send button events without position.
       // Use _relativeMouse.enabled.value consistently with the guard above.
@@ -1581,7 +1587,7 @@ class InputModel {
   void onPointMoveImage(PointerMoveEvent e) {
     if (isViewOnly && !showMyCursor) return;
     if (isViewCamera) return;
-    if (e.kind != ui.PointerDeviceKind.mouse) return;
+    if (!_isMouseLike(e.kind)) return;
 
     if (_relativeMouse.enabled.value) {
       _relativeMouse.updatePointerRegionTopLeftGlobal(e);
