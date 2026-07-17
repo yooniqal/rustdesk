@@ -276,7 +276,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     setState(() {});
   }
 
-  void _handleIOSSoftKeyboardInput(String newValue) {
+  void _handleComposingAwareInput(String newValue) {
     var oldValue = _value;
     _value = newValue;
     var i = newValue.length - 1;
@@ -326,57 +326,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     }
   }
 
-  void _handleNonIOSSoftKeyboardInput(String newValue) {
-    var oldValue = _value;
-    _value = newValue;
-    if (oldValue.isNotEmpty &&
-        newValue.isNotEmpty &&
-        oldValue[0] == '1' &&
-        newValue[0] != '1') {
-      // clipboard
-      oldValue = '';
-    }
-    if (newValue.length == oldValue.length) {
-      // ?
-    } else if (newValue.length < oldValue.length) {
-      final char = 'VK_BACK';
-      inputModel.inputKey(char);
-    } else {
-      final content = newValue.substring(oldValue.length);
-      if (content.length > 1) {
-        if (oldValue != '' &&
-            content.length == 2 &&
-            (content == '""' ||
-                content == '()' ||
-                content == '[]' ||
-                content == '<>' ||
-                content == "{}" ||
-                content == '”“' ||
-                content == '《》' ||
-                content == '（）' ||
-                content == '【】')) {
-          // can not only input content[0], because when input ], [ are also auo insert, which cause ] never be input
-          bind.sessionInputString(sessionId: sessionId, value: content);
-          _openKeyboardUnlocked();
-          return;
-        }
-        bind.sessionInputString(sessionId: sessionId, value: content);
-      } else {
-        inputChar(content);
-      }
-    }
-  }
-
   // handle mobile virtual keyboard
   void handleSoftKeyboardInput(String newValue) {
     if (!inputModel.keyboardInputAllowed) {
       return;
     }
-    if (isIOS) {
-      _handleIOSSoftKeyboardInput(newValue);
-    } else {
-      _handleNonIOSSoftKeyboardInput(newValue);
-    }
+    // CubeRemote: iOS/안드로이드 모두 조합(composing) 인식 경로를 사용한다.
+    // 기존 안드로이드 길이-차이 방식은 한글/CJK 조합 중 동일 길이 치환(예: ㄱ→가)을 처리하지 못해
+    // 자모가 개별 전송(가구→ㄱㅏㄱㅜ)되는 문제가 있었다.
+    _handleComposingAwareInput(newValue);
   }
 
   void inputChar(String char) {
@@ -1116,6 +1074,18 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       wrap(isMac ? 'Cmd+S' : 'Ctrl+S', () {
         sendPrompt(isMac, 'VK_S');
       }),
+      // CubeRemote 원터치 조합키
+      wrap('Alt+Tab', () {
+        sendCombo(alt: true, key: 'VK_TAB');
+      }),
+      if (isWin)
+        wrap('Win+D', () {
+          sendCombo(win: true, key: 'VK_D');
+        }),
+      if (isWin)
+        wrap('C+A+Del', () {
+          sendCombo(ctrl: true, alt: true, key: 'VK_DELETE');
+        }),
     ];
     final space = size.width > 320 ? 4.0 : 2.0;
     // 500 ms is long enough for this widget to be built!
@@ -1509,6 +1479,27 @@ void sendPrompt(bool isMac, String key) {
   } else {
     gFFI.inputModel.ctrl = old;
   }
+}
+
+// CubeRemote: 원터치 조합키. 지정한 모디파이어를 잠시 켜고 키를 보낸 뒤 원복한다.
+// (물리 키보드의 Alt+Tab 등은 안드로이드가 가로채므로, 이 버튼으로 원격에 확실히 전달)
+void sendCombo(
+    {bool ctrl = false,
+    bool alt = false,
+    bool shift = false,
+    bool win = false,
+    required String key}) {
+  final im = gFFI.inputModel;
+  final oc = im.ctrl, oa = im.alt, os = im.shift, ow = im.command;
+  if (ctrl) im.ctrl = true;
+  if (alt) im.alt = true;
+  if (shift) im.shift = true;
+  if (win) im.command = true;
+  im.inputKey(key);
+  im.ctrl = oc;
+  im.alt = oa;
+  im.shift = os;
+  im.command = ow;
 }
 
 class FABLocation extends FloatingActionButtonLocation {
