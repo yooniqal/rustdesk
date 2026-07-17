@@ -8,6 +8,7 @@ import '../../common/widgets/chat_page.dart';
 import '../../models/platform_model.dart';
 import '../../models/state_model.dart';
 import 'connection_page.dart';
+import 'cuberemote_devices_page.dart';
 
 abstract class PageShape extends Widget {
   final String title = "";
@@ -56,6 +57,7 @@ class HomePageState extends State<HomePage> {
       _chatPageTabIndex = _pages.length;
       _pages.addAll([ChatPage(type: ChatPageType.mobileMain), ServerPage()]);
     }
+    _pages.add(CubeDevicesPage());
     _pages.add(SettingsPage());
   }
 

@@ -71,13 +71,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   final keyboardVisibilityController = KeyboardVisibilityController();
 
-  // CubeRemote 진단: 포인터 이벤트(종류/타입)를 화면에 표시해 트랙패드 정체를 파악한다.
-  final ValueNotifier<String> _crDiag =
-      ValueNotifier<String>('진단: 트랙패드를 눌러보고/밀어보세요');
-  void _crSetDiag(String type, PointerEvent e) {
-    _crDiag.value = '$type kind=${e.kind} btn=${e.buttons}';
-  }
-
   late final StreamSubscription<bool> keyboardSubscription;
   final FocusNode _mobileFocusNode = FocusNode();
   final FocusNode _physicalFocusNode = FocusNode();
@@ -544,7 +537,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   Widget getRawPointerAndKeyBody(Widget child) {
     final ffiModel = Provider.of<FfiModel>(context);
-    final inner = RawPointerMouseRegion(
+    return RawPointerMouseRegion(
       cursor: ffiModel.keyboard ? SystemMouseCursors.none : MouseCursor.defer,
       inputModel: inputModel,
       // Disable RawKeyFocusScope before the connecting is established.
@@ -555,38 +548,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               inputModel: inputModel,
               child: child)
           : child,
-    );
-    // CubeRemote 진단 오버레이: 어떤 포인터 이벤트가 오는지 좌상단에 표시(수집만, 소비 안 함).
-    return Stack(
-      children: [
-        Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerHover: (e) => _crSetDiag('HOVER', e),
-          onPointerMove: (e) => _crSetDiag('MOVE', e),
-          onPointerDown: (e) => _crSetDiag('DOWN', e),
-          onPointerPanZoomStart: (e) => _crSetDiag('PANZOOM', e),
-          onPointerSignal: (e) => _crSetDiag('SIGNAL', e),
-          child: inner,
-        ),
-        Positioned(
-          top: 2,
-          left: 2,
-          child: IgnorePointer(
-            child: ValueListenableBuilder<String>(
-              valueListenable: _crDiag,
-              builder: (_, v, __) => Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                color: Colors.black.withOpacity(0.55),
-                child: Text(v,
-                    style: const TextStyle(
-                        color: Colors.greenAccent,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 
