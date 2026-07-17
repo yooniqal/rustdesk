@@ -1292,31 +1292,34 @@ class InputModel {
   void onPointHoverImage(PointerHoverEvent e) {
     _stopFling = true;
     if (isViewOnly && !showMyCursor) return;
-    if (!_isMouseLike(e.kind)) return;
+    // CubeRemote: hover 이벤트는 손가락 화면 접촉이 아니라 포인팅 장치(마우스/트랙패드/스타일러스)에서만 온다.
+    // 북커버 트랙패드는 무클릭 이동을 kind=touch 의 hover 로 보내므로, kind 로 막지 않고 커서 이동으로 처리한다.
+    final bool realMouse = e.kind == ui.PointerDeviceKind.mouse;
 
-    // May fix https://github.com/rustdesk/rustdesk/issues/13009
-    if (isIOS && e.synthesized && e.position == Offset.zero && e.buttons == 0) {
+    // May fix https://github.com/rustdesk/rustdesk/issues/13009 (실제 마우스에만 적용)
+    if (realMouse &&
+        isIOS &&
+        e.synthesized &&
+        e.position == Offset.zero &&
+        e.buttons == 0) {
       // iOS may emit a synthesized hover event at (0,0) when the mouse is disconnected.
-      // Ignore this event to prevent cursor jumping.
       debugPrint('Ignored synthesized hover at (0,0) on iOS');
       return;
     }
 
-    // Only update pointer region when relative mouse mode is enabled.
-    // This avoids unnecessary tracking when not in relative mode.
     if (_relativeMouse.enabled.value) {
       _relativeMouse.updatePointerRegionTopLeftGlobal(e);
     }
 
-    if (!isPhysicalMouse.value) {
+    // 실제 마우스만 물리마우스 모드로 전환한다. 트랙패드(kind=touch)는 터치 제스처 경로를 유지해
+    // 클릭/드래그가 동작하게 두고, hover 는 원격 커서 이동만 담당한다(안 눌러도 커서가 따라오게).
+    if (realMouse && !isPhysicalMouse.value) {
       isPhysicalMouse.value = true;
     }
-    if (isPhysicalMouse.value) {
-      if (!_relativeMouse.handleRelativeMouseMove(e.localPosition)) {
-        final canvasPosition = _pointerPositionForRemoteCanvas(e);
-        handleMouse(_getMouseEvent(e, _kMouseEventMove), canvasPosition,
-            edgeScroll: useEdgeScroll);
-      }
+    if (!_relativeMouse.handleRelativeMouseMove(e.localPosition)) {
+      final canvasPosition = _pointerPositionForRemoteCanvas(e);
+      handleMouse(_getMouseEvent(e, _kMouseEventMove), canvasPosition,
+          edgeScroll: useEdgeScroll);
     }
   }
 
