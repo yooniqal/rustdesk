@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.view.WindowManager
+import android.view.KeyEvent
 import android.media.MediaCodecInfo
 import android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
 import android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
@@ -80,6 +81,20 @@ class MainActivity : FlutterActivity() {
                 mapOf("name" to "input", "value" to inputPer.toString())
             )
         }
+    }
+
+    // CubeRemote: 물리 키보드의 시스템 조합(Alt+Tab 등)을 앱이 먼저 소비해 원격 PC로만 전달되게 한다.
+    // super.dispatchKeyEvent 로 Flutter(원격 전송 경로)에 먼저 넘긴 뒤, 안드로이드가 앱 전환 등에 쓰는
+    // 조합키는 소비(true)하여 안드로이드 기본동작을 막는다. (Ctrl/Shift 단독 조합은 그대로 통과.)
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val handled = super.dispatchKeyEvent(event)
+        val meta = event.metaState
+        val hasAlt = (meta and KeyEvent.META_ALT_ON) != 0
+        val hasMeta = (meta and KeyEvent.META_META_ON) != 0
+        if ((event.keyCode == KeyEvent.KEYCODE_TAB && hasAlt) || hasMeta) {
+            return true
+        }
+        return handled
     }
 
     private fun requestMediaProjection() {

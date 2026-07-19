@@ -216,7 +216,7 @@ class _CubeDevicesPageState extends State<CubeDevicesPage> {
           onPressed: () => _connect(id),
           child: const Text('연결'),
         ),
-        onTap: () => _connect(id),
+        // 실수 접속 방지: 카드 전체 탭이 아니라 '연결' 버튼으로만 접속한다(스크롤 중 오접속 방지).
       ),
     );
   }
