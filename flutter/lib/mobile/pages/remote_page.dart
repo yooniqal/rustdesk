@@ -965,6 +965,10 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       }, active: inputModel.command),
     ];
     final keys = <Widget>[
+      // CubeRemote: Alt+Tab 을 항상 보이는 위치에(물리 Alt+Tab이 안드로이드에 막힐 때 대체)
+      wrap('Alt+Tab', () {
+        sendCombo(alt: true, key: 'VK_TAB');
+      }),
       wrap(
           ' Fn ',
           () => setState(
