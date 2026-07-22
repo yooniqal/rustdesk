@@ -72,6 +72,12 @@ class _CubeDevicesPageState extends State<CubeDevicesPage> {
     connect(context, id, password: CubeRemoteConfig.fixedPassword);
   }
 
+  // 파일 전송 모드로 접속(원격 PC와 파일/이미지 주고받기).
+  void _connectFile(String id) {
+    connect(context, id,
+        password: CubeRemoteConfig.fixedPassword, isFileTransfer: true);
+  }
+
   Future<void> _openConsole() async {
     final uri = Uri.parse(CubeRemoteConfig.consoleUrl);
     try {
@@ -212,11 +218,22 @@ class _CubeDevicesPageState extends State<CubeDevicesPage> {
         title:
             Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(id),
-        trailing: ElevatedButton(
-          onPressed: () => _connect(id),
-          child: const Text('연결'),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 파일 전송(이미지 포함) 모드로 접속
+            IconButton(
+              tooltip: '파일 전송',
+              icon: const Icon(Icons.folder_open),
+              onPressed: () => _connectFile(id),
+            ),
+            ElevatedButton(
+              onPressed: () => _connect(id),
+              child: const Text('연결'),
+            ),
+          ],
         ),
-        // 실수 접속 방지: 카드 전체 탭이 아니라 '연결' 버튼으로만 접속한다(스크롤 중 오접속 방지).
+        // 실수 접속 방지: 카드 전체 탭이 아니라 버튼으로만 접속한다(스크롤 중 오접속 방지).
       ),
     );
   }
