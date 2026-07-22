@@ -965,10 +965,19 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       }, active: inputModel.command),
     ];
     final keys = <Widget>[
-      // CubeRemote: Alt+Tab 을 항상 보이는 위치에(물리 Alt+Tab이 안드로이드에 막힐 때 대체)
+      // CubeRemote: 항상 보이는 실용 조합키(물리 Alt+Tab이 삼성 정책상 앱에 안 오므로 버튼으로 대체).
+      // Alt+Tab: 원터치 창 전환. Tab: 1회성. Win: 1회성 윈도우키(시작메뉴).
+      // Ctrl/Alt 토글은 위 modifiers 행에 이미 있어 '누르면 계속 눌림' 방식으로 조합 가능.
       wrap('Alt+Tab', () {
         sendCombo(alt: true, key: 'VK_TAB');
       }),
+      wrap(' Tab ', () {
+        inputModel.inputKey('VK_TAB');
+      }),
+      if (!isMac)
+        wrap(' Win ', () {
+          inputModel.inputKey('Meta_L');
+        }),
       wrap(
           ' Fn ',
           () => setState(
