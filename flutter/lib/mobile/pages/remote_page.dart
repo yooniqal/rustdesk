@@ -565,24 +565,26 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                     () => _showGestureHelp = !_showGestureHelp),
                               ),
                             ]) +
-                  (isWeb
-                      ? []
+                  // CubeRemote: 채팅 아이콘 제거하고 자주 쓰는 조합키를 하단바에 상시 표시.
+                  // (원격 대상이 안드로이드가 아닐 때 = PC 원격 지원 상황에서만)
+                  (isWeb || gFFI.ffiModel.isPeerAndroid || ffiModel.viewOnly || !ffiModel.keyboard
+                      ? <Widget>[]
                       : <Widget>[
-                          futureBuilder(
-                              future: gFFI.invokeMethod(
-                                  "get_value", "KEY_IS_SUPPORT_VOICE_CALL"),
-                              hasData: (isSupportVoiceCall) => IconButton(
-                                    color: Colors.white,
-                                    icon: isAndroid && isSupportVoiceCall
-                                        ? SvgPicture.asset('assets/chat.svg',
-                                            colorFilter: ColorFilter.mode(
-                                                Colors.white, BlendMode.srcIn))
-                                        : Icon(Icons.message),
-                                    onPressed: () =>
-                                        isAndroid && isSupportVoiceCall
-                                            ? showChatOptions(widget.id)
-                                            : onPressedTextChat(widget.id),
-                                  ))
+                          TextButton(
+                            style: TextButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size(0, 0),
+                                padding: const EdgeInsets.symmetric(horizontal: 8)),
+                            onPressed: () => sendCombo(alt: true, key: 'VK_TAB'),
+                            child: const Text('Alt+Tab',
+                                style: TextStyle(color: Colors.white, fontSize: 12)),
+                          ),
+                          IconButton(
+                            color: Colors.white,
+                            tooltip: 'Win',
+                            icon: const Icon(Icons.desktop_windows),
+                            onPressed: () => inputModel.inputKey('Meta_L'),
+                          ),
                         ]) +
                   [
                     IconButton(
