@@ -447,6 +447,12 @@ class InputModel {
 
   // mouse
   final isPhysicalMouse = false.obs;
+
+  // CubeRemote 트랙패드 드래그 지원:
+  // 손가락 화면터치는 hover 이벤트가 없고, 북커버 트랙패드는 hover 를 낸다.
+  // 따라서 "직전에 hover 가 있었던 touch" = 트랙패드로 보고 마우스처럼(버튼다운+이동+업) 처리한다.
+  int _lastHoverMs = 0;
+  bool _trackpadDown = false;
   int _lastButtons = 0;
   Offset lastMousePos = Offset.zero;
   int _lastWheelTsUs = 0;
@@ -1311,9 +1317,11 @@ class InputModel {
       _relativeMouse.updatePointerRegionTopLeftGlobal(e);
     }
 
-    // 실제 마우스만 물리마우스 모드로 전환한다. 트랙패드(kind=touch)는 터치 제스처 경로를 유지해
-    // 클릭/드래그가 동작하게 두고, hover 는 원격 커서 이동만 담당한다(안 눌러도 커서가 따라오게).
-    if (realMouse && !isPhysicalMouse.value) {
+    // hover 는 포인팅 장치(마우스/트랙패드)에서만 온다. 시각을 기록해두면 이어지는 touch 가
+    // 트랙패드인지(직전 hover 있음) 손가락인지(hover 없음) 구분할 수 있다.
+    _lastHoverMs = DateTime.now().millisecondsSinceEpoch;
+    // 포인팅 장치가 감지되면 물리마우스 모드로 전환(터치 제스처 영역 비활성 → 마우스 드래그 가능).
+    if (!isPhysicalMouse.value) {
       isPhysicalMouse.value = true;
     }
     if (!_relativeMouse.handleRelativeMouseMove(e.localPosition)) {
@@ -1519,6 +1527,12 @@ class InputModel {
     return dt >= 0 && dt < kTouchAfterMouseWindowMs;
   }
 
+  // 트랙패드 판별: kind==touch 이지만 직전(1.5초 내)에 hover 가 있었으면 트랙패드로 본다(손가락은 hover 없음).
+  bool _asMouse(ui.PointerDeviceKind kind, int nowMs) =>
+      kind != ui.PointerDeviceKind.touch ||
+      (nowMs - _lastHoverMs) < 1500 ||
+      _trackpadDown;
+
   void onPointDownImage(PointerDownEvent e) {
     debugPrint("onPointDownImage ${e.kind}");
     _stopFling = true;
@@ -1528,22 +1542,26 @@ class InputModel {
     if (isViewOnly && !showMyCursor) return;
     if (isViewCamera) return;
 
-    // Track mouse down events for duplicate detection on iOS.
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    if (_isMouseLike(e.kind)) {
+    final asMouse = _asMouse(e.kind, nowMs);
+    if (asMouse) {
+      // 실제 마우스 또는 트랙패드 → 마우스 버튼다운(드래그 시작 가능).
       if (!isPhysicalMouse.value) {
         isPhysicalMouse.value = true;
       }
       _lastMouseDownTimeMs = nowMs;
       _lastMouseDownPos = e.position;
+      if (e.kind == ui.PointerDeviceKind.touch) {
+        _trackpadDown = true; // 트랙패드 클릭-드래그 시작
+      }
     }
 
     if (_relativeMouse.enabled.value) {
       _relativeMouse.updatePointerRegionTopLeftGlobal(e);
     }
 
-    if (!_isMouseLike(e.kind)) {
-      // Ignore duplicate touch events that follow a recent mouse click (iOS Magic Mouse issue).
+    if (!asMouse) {
+      // 진짜 손가락 터치(직전 hover 없음) → 터치 제스처 경로로.
       if (isPhysicalMouse.value && _shouldIgnoreTouchAfterMouse(nowMs)) {
         return;
       }
@@ -1573,7 +1591,10 @@ class InputModel {
       _relativeMouse.updatePointerRegionTopLeftGlobal(e);
     }
 
-    if (!_isMouseLike(e.kind)) return;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final asMouse = _asMouse(e.kind, nowMs);
+    _trackpadDown = false; // 버튼 업 → 트랙패드 드래그 종료
+    if (!asMouse) return;
     if (isPhysicalMouse.value) {
       // In relative mouse mode, send button events without position.
       // Use _relativeMouse.enabled.value consistently with the guard above.
@@ -1590,7 +1611,7 @@ class InputModel {
   void onPointMoveImage(PointerMoveEvent e) {
     if (isViewOnly && !showMyCursor) return;
     if (isViewCamera) return;
-    if (!_isMouseLike(e.kind)) return;
+    if (!_asMouse(e.kind, DateTime.now().millisecondsSinceEpoch)) return;
 
     if (_relativeMouse.enabled.value) {
       _relativeMouse.updatePointerRegionTopLeftGlobal(e);
