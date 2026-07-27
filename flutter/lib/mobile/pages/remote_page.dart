@@ -15,6 +15,7 @@ import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
 import '../../common.dart';
+import '../../cuberemote_session_keepalive.dart';
 import '../../common/widgets/overlay.dart';
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/remote_input.dart';
@@ -107,6 +108,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           .showLoading(translate('Connecting...'), onCancel: closeConnection);
     });
     WakelockManager.enable(_uniqueKey);
+    // 백그라운드로 나가도 세션이 끊기지 않도록 프로세스를 붙잡아 둔다(알림바에 "연결 중" 표시).
+    CubeSessionKeepAlive.start(widget.id);
     _physicalFocusNode.requestFocus();
     gFFI.inputModel.listenToMouse(true);
     gFFI.qualityMonitorModel.checkShowQualityMonitor(sessionId);
@@ -152,6 +155,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     // "Connecting...". Dispatching it here makes teardown happen synchronously on
     // pop; the `sessionClose` in `gFFI.close()` becomes a no-op once removed.
     unawaited(bind.sessionClose(sessionId: sessionId));
+    // 세션이 끝났으므로 프로세스를 붙잡아 둘 이유가 없다. sessionClose 와 같이 앞쪽에서
+    // 처리해야 뒤쪽 await 들이 중단돼도 알림이 남지 않는다.
+    unawaited(CubeSessionKeepAlive.stop());
     // https://github.com/flutter/flutter/issues/64935
     super.dispose();
     gFFI.dialogManager.hideMobileActionsOverlay(store: false);

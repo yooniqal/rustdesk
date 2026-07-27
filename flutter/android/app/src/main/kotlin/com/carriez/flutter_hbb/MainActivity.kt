@@ -201,6 +201,17 @@ class MainActivity : FlutterActivity() {
                         result.success(false)
                     }
                 }
+                // CubeRemote: 원격/파일전송 페이지가 열려 있는 동안 앱 프로세스를 살려둔다.
+                // (뷰어 세션에는 포그라운드 서비스가 없어 백그라운드로 나가면 세션이 끊겼다)
+                "cr_start_session_service" -> {
+                    val peer = call.argument<String>("peer") ?: ""
+                    ViewerSessionService.start(this, peer)
+                    result.success(true)
+                }
+                "cr_stop_session_service" -> {
+                    ViewerSessionService.stop(this)
+                    result.success(true)
+                }
                 "check_service" -> {
                     Companion.flutterMethodChannel?.invokeMethod(
                         "on_state_changed",

@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 import 'package:toggle_switch/toggle_switch.dart';
 
 import '../../common.dart';
+import '../../cuberemote_session_keepalive.dart';
 import '../../common/widgets/dialog.dart';
 
 class FileManagerPage extends StatefulWidget {
@@ -87,6 +88,8 @@ class _FileManagerPageState extends State<FileManagerPage> {
     });
     gFFI.ffiModel.updateEventListener(gFFI.sessionId, widget.id);
     WakelockManager.enable(_uniqueKey);
+    // 큰 파일 전송 중 다른 앱을 봐도 전송이 끊기지 않도록 프로세스를 붙잡아 둔다.
+    CubeSessionKeepAlive.start(widget.id);
   }
 
   @override
@@ -97,6 +100,7 @@ class _FileManagerPageState extends State<FileManagerPage> {
       WakelockManager.disable(_uniqueKey);
     });
     model.jobController.clear();
+    unawaited(CubeSessionKeepAlive.stop());
     super.dispose();
   }
 

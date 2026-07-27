@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- targetSdk 34+ 로 올릴 때 ViewerSessionService(dataSync) 에 필요. 33 에서는 무시된다. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -93,6 +95,14 @@
         <service
             android:name=".FloatingWindowService"
             android:enabled="true" />
+
+        <!-- CubeRemote: 뷰어 세션 유지용 포그라운드 서비스(백그라운드 전환 시 연결 끊김 방지).
+             targetSdk 33 에서는 foregroundServiceType 이 필수는 아니지만 34+ 승격에 대비해 명시. -->
+        <service
+            android:name=".ViewerSessionService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!--
  Don't delete the meta-data below.
