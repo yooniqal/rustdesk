@@ -63,7 +63,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Timer? _timer;
   bool _showBar = !isWebDesktop;
   bool _showGestureHelp = false;
-  String _value = '';
+  String _value = initText;   // 입력창(_textController)도 initText 로 시작한다 — 같은 값이어야 diff 가 성립
   Orientation? _currentOrientation;
   final _uniqueKey = UniqueKey();
   Timer? _iosKeyboardWorkaroundTimer;
@@ -76,6 +76,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final FocusNode _mobileFocusNode = FocusNode();
   final FocusNode _physicalFocusNode = FocusNode();
   var _showEdit = false; // use soft keyboard
+  // 세션 종료를 누른 뒤에는 하단바를 그리지 않는다. 표시 조건이 pi.displays 에 걸려 있어서
+  // 종료 중 pi 가 요동치면 Obx 가 반복 리빌드되며 하단바가 빠르게 깜빡인다(2026-08-04 보고).
+  bool _closing = false;
 
   Worker? _waylandKeyboardGateWorker;
   bool _waylandKeyboardGateInitialized = false;
@@ -282,6 +285,23 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     setState(() {});
   }
 
+  // 입력창을 기준점(initText)으로 되돌린다.
+  //
+  // 커서를 반드시 끝에 둬야 한다. `_textController.text = ...` 만 하면 커서가 문자열 앞에
+  // 놓이고, 그러면 아래 diff 가 "새로 생긴 글자"를 센티넬의 마지막 '1' 로 계산해서
+  // 글자를 칠 때마다 원격에 '1' 을 하나씩 보낸다(2026-08-04 실제 증상: 무엇을 쳐도 1111111).
+  void _resetInputField() {
+    _value = initText;
+    _textController.value = TextEditingValue(
+      text: initText,
+      selection: TextSelection.collapsed(offset: initText.length),
+    );
+  }
+
+  // 한 번의 입력으로 지울 수 있는 글자 수 상한. diff 가 어긋났을 때 원격 문서가
+  // 백스페이스 수백 개로 날아가는 것을 막는다.
+  static const int _kMaxBackspaces = 32;
+
   void _handleComposingAwareInput(String newValue) {
     var oldValue = _value;
     _value = newValue;
@@ -289,6 +309,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     for (; i >= 0 && newValue[i] != '1'; --i) {}
     var j = oldValue.length - 1;
     for (; j >= 0 && oldValue[j] != '1'; --j) {}
+
+    // oldValue 에 센티넬이 없다 = _value 가 입력창과 어긋난 상태.
+    // 이때 계산되는 diff 는 신뢰할 수 없고, 그대로 두면 센티넬 1024자가 통째로 전송된다.
+    // 아무것도 보내지 말고 기준점을 다시 맞춘다.
+    if (j < 0) {
+      _resetInputField();
+      return;
+    }
+
     if (i < j) j = i;
     var subNewValue = newValue.substring(j + 1);
     var subOldValue = oldValue.substring(j + 1);
@@ -320,15 +349,33 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     }
 
     // Delete the different part in the old value.
-    for (i = 0; i < subOldValue.length - common; ++i) {
+    final deleteCount = subOldValue.length - common;
+    if (deleteCount > _kMaxBackspaces) {
+      // 정상 입력에서는 나올 수 없는 수치 = diff 가 어긋났다. 원격을 망가뜨리느니 포기한다.
+      _resetInputField();
+      return;
+    }
+    for (i = 0; i < deleteCount; ++i) {
       inputModel.inputKey('VK_BACK');
     }
 
     // Input the new string.
-    if (newStr.length > 1) {
-      bind.sessionInputString(sessionId: sessionId, value: newStr);
-    } else {
-      inputChar(newStr);
+    // 한글처럼 조합이 끝난 한 글자도 문자열로 보낸다. inputKey 는 키 이름('VK_BACK')이나
+    // ASCII 를 보내는 경로라 비ASCII 한 글자를 넘기면 엉뚱한 문자가 찍히거나 아무것도 안 들어간다.
+    // (게다가 inputKey 는 툴바의 Ctrl/Alt 토글 상태를 같이 실어보내므로 토글이 켜져 있으면
+    //  글자마다 Ctrl+글자가 나간다.)
+    if (newStr.isNotEmpty) {
+      if (newStr.length > 1 || newStr.codeUnitAt(0) > 127) {
+        bind.sessionInputString(sessionId: sessionId, value: newStr);
+      } else {
+        inputChar(newStr);
+      }
+    }
+
+    // 조합 중이 아니면 매번 기준점으로 되돌린다. 커서가 항상 끝에 있게 되고
+    // _value 와 입력창이 어긋날 여지가 사라진다.
+    if (!_textController.value.isComposingRangeValid) {
+      _resetInputField();
     }
   }
 
@@ -381,8 +428,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     inputModel.keyboardInputAllowed = true;
     gFFI.invokeMethod("enable_soft_keyboard", true);
     // destroy first, so that our _value trick can work
-    _value = initText;
-    _textController.text = _value;
+    _resetInputField();
     setState(() => _showEdit = false);
     _timer?.cancel();
     _timer = Timer(kMobileDelaySoftKeyboard, () {
@@ -398,7 +444,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     });
   }
 
-  Widget _bottomWidget() => _showGestureHelp
+  Widget _bottomWidget() => _closing
+      ? Offstage()
+      : _showGestureHelp
       ? getGestureHelp()
       : (_showBar && gFFI.ffiModel.pi.displays.isNotEmpty
           ? getBottomAppBar()
@@ -412,6 +460,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
     return WillPopScope(
       onWillPop: () async {
+        if (mounted) setState(() => _closing = true);
         clientClose(sessionId, gFFI);
         return false;
       },
@@ -530,6 +579,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       color: Colors.white,
                       icon: Icon(Icons.clear),
                       onPressed: () {
+                        if (mounted) setState(() => _closing = true);
                         clientClose(sessionId, gFFI);
                       },
                     ),
