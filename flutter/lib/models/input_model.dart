@@ -1320,8 +1320,11 @@ class InputModel {
     // hover 는 포인팅 장치(마우스/트랙패드)에서만 온다. 시각을 기록해두면 이어지는 touch 가
     // 트랙패드인지(직전 hover 있음) 손가락인지(hover 없음) 구분할 수 있다.
     _lastHoverMs = DateTime.now().millisecondsSinceEpoch;
-    // 포인팅 장치가 감지되면 물리마우스 모드로 전환(터치 제스처 영역 비활성 → 마우스 드래그 가능).
-    if (!isPhysicalMouse.value) {
+    // 물리마우스 모드는 **실제 마우스일 때만** 켠다.
+    // 트랙패드 hover 로도 켜버리면 한 번 켜진 뒤 손가락 터치까지 절대좌표 마우스로 처리돼
+    // "터치한 자리로 커서가 순간이동해서 조작이 안 되는" 상태가 된다(2026-08-05 보고).
+    // 트랙패드 클릭·드래그는 onPointDownImage 의 _asMouse 판별이 따로 처리하므로 여기서 켤 필요가 없다.
+    if (realMouse && !isPhysicalMouse.value) {
       isPhysicalMouse.value = true;
     }
     if (!_relativeMouse.handleRelativeMouseMove(e.localPosition)) {
@@ -1527,10 +1530,14 @@ class InputModel {
     return dt >= 0 && dt < kTouchAfterMouseWindowMs;
   }
 
-  // 트랙패드 판별: kind==touch 이지만 직전(1.5초 내)에 hover 가 있었으면 트랙패드로 본다(손가락은 hover 없음).
+  // 트랙패드 클릭 직전에는 반드시 이동(hover)이 선행되므로 창을 짧게 잡는다.
+  // 길게 잡으면 트랙패드를 쓴 직후의 손가락 터치까지 마우스로 오인해 손가락 조작이 망가진다.
+  static const int _kTrackpadHoverWindowMs = 300;
+
+  // 트랙패드 판별: kind==touch 이지만 직전에 hover 가 있었으면 트랙패드로 본다(손가락은 hover 없음).
   bool _asMouse(ui.PointerDeviceKind kind, int nowMs) =>
       kind != ui.PointerDeviceKind.touch ||
-      (nowMs - _lastHoverMs) < 1500 ||
+      (nowMs - _lastHoverMs) < _kTrackpadHoverWindowMs ||
       _trackpadDown;
 
   void onPointDownImage(PointerDownEvent e) {
@@ -1598,6 +1605,26 @@ class InputModel {
     if (isPhysicalMouse.value) {
       // In relative mouse mode, send button events without position.
       // Use _relativeMouse.enabled.value consistently with the guard above.
+      if (_relativeMouse.enabled.value) {
+        _relativeMouse
+            .sendRelativeMouseButton(_getMouseEvent(e, _kMouseEventUp));
+      } else {
+        final canvasPosition = _pointerPositionForRemoteCanvas(e);
+        handleMouse(_getMouseEvent(e, _kMouseEventUp), canvasPosition);
+      }
+    }
+  }
+
+  // 포인터가 취소되면(부모 제스처가 가져가거나 위젯을 벗어남) PointerUp 이 오지 않는다.
+  // 트랙패드 드래그 중이었다면 원격의 왼쪽 버튼이 눌린 채로 남아 조작이 불가능해진다
+  // (2026-08-05 보고: 좌클릭이 눌려 있는 버그). 여기서 반드시 버튼을 놓아준다.
+  void onPointCancelImage(PointerCancelEvent e) {
+    if (isViewOnly && !showMyCursor) return;
+    if (isViewCamera) return;
+    final wasDown = _trackpadDown;
+    _trackpadDown = false;
+    if (!wasDown && !_isMouseLike(e.kind)) return;
+    if (isPhysicalMouse.value) {
       if (_relativeMouse.enabled.value) {
         _relativeMouse
             .sendRelativeMouseButton(_getMouseEvent(e, _kMouseEventUp));

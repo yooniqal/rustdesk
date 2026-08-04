@@ -620,6 +620,8 @@ class RawPointerMouseRegion extends StatelessWidget {
         inputModel.onPointUpImage(evt);
       },
       onPointerMove: inputModel.onPointMoveImage,
+      // 취소가 오면 PointerUp 이 오지 않는다 → 트랙패드 드래그 중이었으면 원격 버튼이 눌린 채 남는다.
+      onPointerCancel: inputModel.onPointCancelImage,
       onPointerSignal: inputModel.onPointerSignalImage,
       onPointerPanZoomStart: inputModel.onPointerPanZoomStart,
       onPointerPanZoomUpdate: inputModel.onPointerPanZoomUpdate,
