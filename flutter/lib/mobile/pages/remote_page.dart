@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -82,6 +83,18 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   Worker? _waylandKeyboardGateWorker;
   bool _waylandKeyboardGateInitialized = false;
+
+  // 소프트키보드가 오르내리면 캔버스가 실제로 그려지는 높이가 달라진다.
+  // CanvasModel 은 그 높이를 `_size` 에 캐시해 두고(_x/_y 도 그 값으로 계산한다),
+  // 정작 좌표 변환에 쓰이는 getVisibleRect() 는 viewInsets 를 뺀 **현재** 크기를 매번 새로 읽는다.
+  // 둘이 어긋나면 손가락 위치가 키보드가 없을 때의 좌표로 환산돼, 커서가 엉뚱한 데로 간다
+  // (2026-09-02 보고: "키보드를 띄우면 안 떠 있을 때 기준으로 커서가 움직인다").
+  //
+  // 기존에도 보정 경로는 있었지만 KeyHelpTools 위젯의 레이아웃 콜백에 얹혀 있어서
+  // (build -> 500ms -> _updateRect -> 다시 100ms) 느리고, 그 위젯이 안 뜨는 상황에선 아예 안 돈다.
+  // 같은 캔버스를 쓰는 view_camera_page 는 didChangeMetrics 로 직접 처리한다 — 여기만 빠져 있었다.
+  Timer? _timerDidChangeMetrics;
+  double _viewInsetsBottom = 0;
 
   InputModel get inputModel => gFFI.inputModel;
   SessionID get sessionId => gFFI.sessionId;
@@ -175,6 +188,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     inputModel.keyboardInputAllowed = true;
     await gFFI.close();
     _timer?.cancel();
+    _timerDidChangeMetrics?.cancel();
     _iosKeyboardWorkaroundTimer?.cancel();
     gFFI.dialogManager.dismissAll();
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
@@ -193,6 +207,27 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       trySyncClipboard();
     }
+  }
+
+  // 키보드가 오르내려 화면 하단 여백(viewInsets.bottom)이 바뀌면 캔버스 크기를 다시 잡는다.
+  // view_camera_page 의 같은 이름 메서드와 동일한 형태로 맞췄다.
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    // 사용자가 직접 확대·이동해 둔 상태라면 건드리지 않는다. 여기서 캔버스를 다시 가운데로
+    // 맞춰버리면 "확대해 놨는데 화면이 제멋대로 움직인다" 가 된다.
+    if (gFFI.cursorModel.lastKeyboardIsVisible &&
+        gFFI.canvasModel.isMobileCanvasChanged) {
+      return;
+    }
+    final newBottom = MediaQueryData.fromView(ui.window).viewInsets.bottom;
+    _timerDidChangeMetrics?.cancel();
+    // 키보드 애니메이션 도중에 여러 번 불리므로 잠깐 모아서 마지막 값으로만 처리한다.
+    _timerDidChangeMetrics = Timer(Duration(milliseconds: 100), () {
+      if (newBottom == _viewInsetsBottom) return;
+      _viewInsetsBottom = newBottom;
+      gFFI.canvasModel.mobileFocusCanvasCursor();
+    });
   }
 
   // For client side
