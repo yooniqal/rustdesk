@@ -941,6 +941,21 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 gFFI.ffiModel.toggleTouchMode();
                 final v = gFFI.ffiModel.touchMode ? 'Y' : 'N';
                 bind.mainSetLocalOption(key: kOptionTouchMode, value: v);
+                // 사용자가 모드를 직접 고르면 그 선택이 자동 판별을 이겨야 한다.
+                //
+                // isPhysicalMouse 가 켜져 있으면 remote_page 의 body 가 제스처 영역
+                // (RawTouchGestureDetectorRegion) 대신 포인터 경로를 쓴다. 터치/마우스 모드는
+                // 제스처 영역 안에서만 의미가 있으므로, 켜진 상태에서는 스위치를 눌러도
+                // 아이콘만 바뀌고 조작은 그대로였다(2026-09-13 보고).
+                //
+                // 이 기기(갤럭시 S21)에는 마우스로 보고되는 입력 장치가 따로 있다:
+                //   Device 6: sec_touchpad  Sources: KEYBOARD | MOUSE | TOUCHPAD
+                // 여기서 hover 가 한 번 오면 onPointHoverImage 의 realMouse 판정이
+                // isPhysicalMouse 를 켜버린다. 손가락만 쓰는 폰에서는 켤 이유가 없다.
+                //
+                // 태블릿 북커버 트랙패드는 영향받지 않는다 — 다음 트랙패드 클릭에서
+                // onPointDownImage 의 _asMouse 판정이 곧바로 다시 켜준다.
+                inputModel.isPhysicalMouse.value = false;
               },
               virtualMouseMode: gFFI.ffiModel.virtualMouseMode,
               inputModel: gFFI.inputModel,
