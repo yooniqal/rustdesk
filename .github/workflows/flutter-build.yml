@@ -388,6 +388,10 @@ jobs:
 
   # The fallback for the flutter version, we use Sciter for 32bit Windows.
   build-for-windows-sciter:
+    # CubeRemote: 32비트 윈도우 뷰어. 러너에서 nightly-2023-10-13-i686-pc-windows-msvc
+    #   툴체인이 더는 실행되지 않아 계속 실패한다. 이 산출물은 /app 의 32비트 PC 설치본뿐이고
+    #   가맹점 32비트 PC 는 본가 공식 exe 를 쓰므로 영향이 없다. 필요해지면 되살릴 것(2026-09-16).
+    if: false
     name: ${{ matrix.job.target }} (${{ matrix.job.os }})
     runs-on: ${{ matrix.job.os }}
     # Temporarily disable this action due to additional test is needed.
@@ -550,7 +554,9 @@ jobs:
             ./SignOutput/rustdesk-*.exe
 
   build-rustdesk-ios:
-    if: ${{ inputs.upload-artifact }}
+    # CubeRemote: 이 포크에서 쓰지 않는 타깃. 끄지 않으면 전체 결과가 늘 failure 로 떠서
+    #   정작 안드로이드/윈도우 빌드가 깨져도 구분이 안 된다(2026-09-16).
+    if: false
     name: build rustdesk ios ipa
     runs-on: ${{ matrix.job.os }}
     needs: [generate-bridge]
@@ -681,6 +687,9 @@ jobs:
 
 
   build-for-macOS:
+    # CubeRemote: 이 포크에서 쓰지 않는 타깃. 끄지 않으면 전체 결과가 늘 failure 로 떠서
+    #   정작 안드로이드/윈도우 빌드가 깨져도 구분이 안 된다(2026-09-16).
+    if: false
     name: ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.os }}
     needs: [generate-bridge]
@@ -1459,6 +1468,9 @@ jobs:
             signed-apk/rustdesk-${{ env.VERSION }}-universal${{ env.suffix }}.apk
 
   build-rustdesk-linux:
+    # CubeRemote: 이 포크에서 쓰지 않는 타깃. 끄지 않으면 전체 결과가 늘 failure 로 떠서
+    #   정작 안드로이드/윈도우 빌드가 깨져도 구분이 안 된다(2026-09-16).
+    if: false
     needs: [generate-bridge]
     name: build rustdesk linux ${{ matrix.job.target }}
     runs-on: ${{ matrix.job.on }}
@@ -1807,7 +1819,9 @@ jobs:
             res/rustdesk-${{ env.VERSION }}*.zst
 
   build-rustdesk-linux-sciter:
-    if: ${{ inputs.upload-artifact }}
+    # CubeRemote: 이 포크에서 쓰지 않는 타깃. 끄지 않으면 전체 결과가 늘 failure 로 떠서
+    #   정작 안드로이드/윈도우 빌드가 깨져도 구분이 안 된다(2026-09-16).
+    if: false
     runs-on: ${{ matrix.job.on }}
     name: build-rustdesk-linux-sciter ${{ matrix.job.target }}
     strategy:
