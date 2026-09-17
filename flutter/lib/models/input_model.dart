@@ -1347,10 +1347,11 @@ class InputModel {
   }
 
   void onPointHoverImage(PointerHoverEvent e) {
+    if (!mobilePointerRouter.isMouseHover(e)) return;
     _stopFling = true;
     if (isViewOnly && !showMyCursor) return;
-    // CubeRemote: hover 이벤트는 손가락 화면 접촉이 아니라 포인팅 장치(마우스/트랙패드/스타일러스)에서만 온다.
-    // 북커버 트랙패드는 무클릭 이동을 kind=touch 의 hover 로 보내므로, kind 로 막지 않고 커서 이동으로 처리한다.
+    // Mouse-source touchpad events are normalized by Android before Flutter.
+    // Screen-touch hover must not move the remote cursor to the finger's point.
     final bool realMouse = e.kind == ui.PointerDeviceKind.mouse;
 
     // May fix https://github.com/rustdesk/rustdesk/issues/13009 (실제 마우스에만 적용)

@@ -8,6 +8,12 @@ class FilteredTap extends TapGestureRecognizer with RemotePointerFilter {}
 class FilteredScale extends ScaleGestureRecognizer with RemotePointerFilter {}
 
 void main() {
+  test('screen hover never moves the cursor in mouse mode', () {
+    final router = MobilePointerRouter();
+    expect(router.isMouseHover(const PointerHoverEvent(device: 0)), isFalse);
+    expect(router.isMouseHover(const PointerHoverEvent(
+        kind: PointerDeviceKind.mouse, device: 0)), isTrue);
+  });
   test('touch remains a gesture even when mouse and finger share device zero',
       () {
     final router = MobilePointerRouter();

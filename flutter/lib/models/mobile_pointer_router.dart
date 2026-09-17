@@ -10,6 +10,9 @@ class MobilePointerRouter {
   bool isMouseDown(PointerDownEvent event) =>
       event.kind != PointerDeviceKind.touch;
 
+  bool isMouseHover(PointerHoverEvent event) =>
+      event.kind != PointerDeviceKind.touch;
+
   bool down(PointerDownEvent event) {
     final mouse = isMouseDown(event);
     if (mouse) _mousePointers.add(event.pointer);
