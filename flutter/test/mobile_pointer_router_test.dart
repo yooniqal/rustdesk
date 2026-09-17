@@ -27,9 +27,9 @@ void main() {
     expect(router.end(const PointerUpEvent(pointer: 1)), isFalse);
   });
 
-  test('mouse and normalized touchpad clicks do not need a hover', () {
+  test('mouse and stylus clicks do not need a hover', () {
     final router = MobilePointerRouter();
-    for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.trackpad]) {
+    for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.stylus]) {
       expect(router.down(PointerDownEvent(kind: kind, pointer: 1)), isTrue);
       expect(router.end(const PointerUpEvent(pointer: 1)), isTrue);
     }
