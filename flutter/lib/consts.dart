@@ -667,6 +667,8 @@ const Map<int, String> physicalKeyMap = <int, String>{
   0x00070077: 'VK_SELECT',
   0x00070088: 'VK_KANA',
   0x0007008a: 'VK_CONVERT',
+  0x00070090: 'VK_HANGUL',
+  0x00070091: 'VK_HANJA',
   0x000700e0: 'VK_CONTROL',
   0x000700e1: 'VK_SHIFT',
   0x000700e2: 'VK_MENU',

@@ -1,8 +1,26 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_hbb/models/input_modifier_utils.dart';
+import '../lib/models/input_modifier_utils.dart';
 
 void main() {
+  test('logical Hangul wins over the shared Right Alt physical position', () {
+    expect(
+        isKoreanInputToggle(
+            LogicalKeyboardKey.hangulMode, PhysicalKeyboardKey.altRight),
+        isTrue);
+  });
+  test('dedicated physical language key is supported', () {
+    expect(
+        isKoreanInputToggle(
+            LogicalKeyboardKey.lang1, PhysicalKeyboardKey.lang1),
+        isTrue);
+  });
+  test('ordinary Right Alt remains available for shortcuts', () {
+    expect(
+        isKoreanInputToggle(
+            LogicalKeyboardKey.altRight, PhysicalKeyboardKey.altRight),
+        isFalse);
+  });
   group('shouldReleaseStaleMobileShift', () {
     test('does not release when cached shift is already false', () {
       expect(

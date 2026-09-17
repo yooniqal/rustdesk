@@ -20,6 +20,8 @@ import android.os.IBinder
 import android.util.Log
 import android.view.WindowManager
 import android.view.KeyEvent
+import android.view.InputDevice
+import android.view.MotionEvent
 import android.media.MediaCodecInfo
 import android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
 import android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
@@ -95,6 +97,53 @@ class MainActivity : FlutterActivity() {
             return true
         }
         return handled
+    }
+
+    // Samsung touchpads may use TOOL_TYPE_FINGER even for SOURCE_MOUSE.
+    // Normalize from the Android source before Flutter drops that information.
+    // A preceding hover or Flutter's `device` (contact ID) cannot identify a
+    // physical device: a screen finger and a mouse can both be contact zero.
+    private fun normalizedMouseEvent(event: MotionEvent): MotionEvent? {
+        if (event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)) return null
+        if (!event.isFromSource(InputDevice.SOURCE_MOUSE) &&
+            !event.isFromSource(InputDevice.SOURCE_TOUCHPAD)) return null
+
+        val properties = Array(event.pointerCount) { MotionEvent.PointerProperties() }
+        val coords = Array(event.pointerCount) { MotionEvent.PointerCoords() }
+        var changed = false
+        for (i in 0 until event.pointerCount) {
+            event.getPointerProperties(i, properties[i])
+            event.getPointerCoords(i, coords[i])
+            if (properties[i].toolType == MotionEvent.TOOL_TYPE_FINGER ||
+                properties[i].toolType == MotionEvent.TOOL_TYPE_UNKNOWN) {
+                properties[i].toolType = MotionEvent.TOOL_TYPE_MOUSE
+                changed = true
+            }
+        }
+        if (!changed) return null
+        return MotionEvent.obtain(event.downTime, event.eventTime, event.action,
+            event.pointerCount, properties, coords, event.metaState, event.buttonState,
+            event.xPrecision, event.yPrecision, event.deviceId, event.edgeFlags,
+            event.source, event.flags)
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        val normalized = normalizedMouseEvent(event) ?: return super.dispatchTouchEvent(event)
+        return try {
+            super.dispatchTouchEvent(normalized)
+        } finally {
+            normalized.recycle()
+        }
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        val normalized = normalizedMouseEvent(event)
+            ?: return super.dispatchGenericMotionEvent(event)
+        return try {
+            super.dispatchGenericMotionEvent(normalized)
+        } finally {
+            normalized.recycle()
+        }
     }
 
     private fun requestMediaProjection() {

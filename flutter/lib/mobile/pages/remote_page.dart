@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import '../../models/remote_shortcuts.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common/shared_state.dart';
@@ -434,6 +436,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     } else if (char == ' ') {
       char = 'VK_SPACE';
     }
+    if (inputModel.shift &&
+        !inputModel.ctrl &&
+        !inputModel.alt &&
+        !inputModel.command &&
+        gFFI.ffiModel.pi.platform == kPeerPlatformLinux &&
+        char.length == 1) {
+      char = shiftedAscii(char);
+    }
     inputModel.inputKey(char);
   }
 
@@ -566,12 +576,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               }
                               return Container(
                                 color: MyTheme.canvasColor,
-                                child: inputModel.isPhysicalMouse.value
-                                    ? getBodyForMobile()
-                                    : RawTouchGestureDetectorRegion(
-                                        child: getBodyForMobile(),
-                                        ffi: gFFI,
-                                      ),
+                                child: RawTouchGestureDetectorRegion(
+                                  child: getBodyForMobile(),
+                                  ffi: gFFI,
+                                ),
                               );
                             }),
                           ),
@@ -666,15 +674,17 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 foregroundColor: Colors.white,
                                 minimumSize: const Size(0, 0),
                                 padding: const EdgeInsets.symmetric(horizontal: 8)),
-                            onPressed: () => sendCombo(alt: true, key: 'VK_TAB'),
-                            child: const Text('Alt+Tab',
-                                style: TextStyle(color: Colors.white, fontSize: 12)),
+                            onPressed: inputModel.switchRemoteApp,
+                            child: Text(ffiModel.pi.platform == kPeerPlatformMacOS
+                                    ? 'Cmd+Tab'
+                                    : 'Alt+Tab',
+                                style: const TextStyle(color: Colors.white, fontSize: 12)),
                           ),
                           IconButton(
                             color: Colors.white,
-                            tooltip: 'Win',
-                            icon: const Icon(Icons.desktop_windows),
-                            onPressed: () => inputModel.inputKey('Meta_L'),
+                            tooltip: '한/영 전환',
+                            icon: const Icon(Icons.language),
+                            onPressed: inputModel.switchRemoteInputSource,
                           ),
                         ]) +
                   [
@@ -941,20 +951,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 gFFI.ffiModel.toggleTouchMode();
                 final v = gFFI.ffiModel.touchMode ? 'Y' : 'N';
                 bind.mainSetLocalOption(key: kOptionTouchMode, value: v);
-                // 사용자가 모드를 직접 고르면 그 선택이 자동 판별을 이겨야 한다.
-                //
-                // isPhysicalMouse 가 켜져 있으면 remote_page 의 body 가 제스처 영역
-                // (RawTouchGestureDetectorRegion) 대신 포인터 경로를 쓴다. 터치/마우스 모드는
-                // 제스처 영역 안에서만 의미가 있으므로, 켜진 상태에서는 스위치를 눌러도
-                // 아이콘만 바뀌고 조작은 그대로였다(2026-09-13 보고).
-                //
-                // 이 기기(갤럭시 S21)에는 마우스로 보고되는 입력 장치가 따로 있다:
-                //   Device 6: sec_touchpad  Sources: KEYBOARD | MOUSE | TOUCHPAD
-                // 여기서 hover 가 한 번 오면 onPointHoverImage 의 realMouse 판정이
-                // isPhysicalMouse 를 켜버린다. 손가락만 쓰는 폰에서는 켤 이유가 없다.
-                //
-                // 태블릿 북커버 트랙패드는 영향받지 않는다 — 다음 트랙패드 클릭에서
-                // onPointDownImage 의 _asMouse 판정이 곧바로 다시 켜준다.
                 inputModel.isPhysicalMouse.value = false;
               },
               virtualMouseMode: gFFI.ffiModel.virtualMouseMode,
@@ -1073,18 +1069,21 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       }, active: inputModel.command),
     ];
     final keys = <Widget>[
+      wrap('한/영', inputModel.switchRemoteInputSource),
+      if (isLinux)
+        wrap('Super+Space', () => inputModel.inputChord('VK_SPACE', command: true)),
+      if (isLinux)
+        wrap('Ctrl+Space', () => inputModel.inputChord('VK_SPACE', ctrl: true)),
       // CubeRemote: 항상 보이는 실용 조합키(물리 Alt+Tab이 삼성 정책상 앱에 안 오므로 버튼으로 대체).
       // Alt+Tab: 원터치 창 전환. Tab: 1회성. Win: 1회성 윈도우키(시작메뉴).
       // Ctrl/Alt 토글은 위 modifiers 행에 이미 있어 '누르면 계속 눌림' 방식으로 조합 가능.
-      wrap('Alt+Tab', () {
-        sendCombo(alt: true, key: 'VK_TAB');
-      }),
+      wrap(isMac ? 'Cmd+Tab' : 'Alt+Tab', inputModel.switchRemoteApp),
       wrap(' Tab ', () {
         inputModel.inputKey('VK_TAB');
       }),
       if (!isMac)
         wrap(' Win ', () {
-          inputModel.inputKey('Meta_L');
+          inputModel.inputChord('Meta');
         }),
       wrap(
           ' Fn ',
@@ -1196,9 +1195,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         sendPrompt(isMac, 'VK_S');
       }),
       // CubeRemote 원터치 조합키
-      wrap('Alt+Tab', () {
-        sendCombo(alt: true, key: 'VK_TAB');
-      }),
+      wrap(isMac ? 'Cmd+Tab' : 'Alt+Tab', inputModel.switchRemoteApp),
       if (isWin)
         wrap('Win+D', () {
           sendCombo(win: true, key: 'VK_D');
@@ -1588,39 +1585,17 @@ TTextMenu? getResolutionMenu(FFI ffi, String id) {
 }
 
 void sendPrompt(bool isMac, String key) {
-  final old = isMac ? gFFI.inputModel.command : gFFI.inputModel.ctrl;
-  if (isMac) {
-    gFFI.inputModel.command = true;
-  } else {
-    gFFI.inputModel.ctrl = true;
-  }
-  gFFI.inputModel.inputKey(key);
-  if (isMac) {
-    gFFI.inputModel.command = old;
-  } else {
-    gFFI.inputModel.ctrl = old;
-  }
+  gFFI.inputModel.inputChord(key, ctrl: !isMac, command: isMac);
 }
 
-// CubeRemote: 원터치 조합키. 지정한 모디파이어를 잠시 켜고 키를 보낸 뒤 원복한다.
-// (물리 키보드의 Alt+Tab 등은 안드로이드가 가로채므로, 이 버튼으로 원격에 확실히 전달)
 void sendCombo(
     {bool ctrl = false,
     bool alt = false,
     bool shift = false,
     bool win = false,
     required String key}) {
-  final im = gFFI.inputModel;
-  final oc = im.ctrl, oa = im.alt, os = im.shift, ow = im.command;
-  if (ctrl) im.ctrl = true;
-  if (alt) im.alt = true;
-  if (shift) im.shift = true;
-  if (win) im.command = true;
-  im.inputKey(key);
-  im.ctrl = oc;
-  im.alt = oa;
-  im.shift = os;
-  im.command = ow;
+  gFFI.inputModel.inputChord(key,
+      ctrl: ctrl, alt: alt, shift: shift, command: win);
 }
 
 class FABLocation extends FloatingActionButtonLocation {

@@ -2,6 +2,11 @@ name: Full Flutter CI
 
 on:
   workflow_dispatch:
+    inputs:
+      input-apk-only:
+        description: Build the Android input fix with verified existing native libraries
+        type: boolean
+        default: false
   pull_request:
     paths-ignore:
     - "docs/**"
@@ -19,6 +24,94 @@ on:
 
 jobs:
   run-ci:
+    if: ${{ inputs.input-apk-only != true }}
     uses: ./.github/workflows/flutter-build.yml
     with:
       upload-artifact: false
+
+  input-apk:
+    if: ${{ inputs.input-apk-only == true }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+      - name: Verify native sources match the reused artifact
+        run: git diff --exit-code 6c4ee83b114e382ae4f7c379e4e9ea6618711ca8 -- src libs Cargo.toml Cargo.lock
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          cache: true
+      - name: Apply the existing Flutter SDK patch
+        run: git -C "$FLUTTER_ROOT" apply "$GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+      - name: Input regression tests
+        run: bash flutter/test/run_input_regressions.sh
+      - uses: actions/download-artifact@v4
+        with:
+          name: bridge-artifact
+          run-id: 35177219271
+          github-token: ${{ github.token }}
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          name: rustdesk-1.4.9-aarch64.apk
+          run-id: 35177219271
+          github-token: ${{ github.token }}
+          path: base-apk
+      - name: Extract and verify native libraries
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, zipfile
+          expected = {
+              'librustdesk.so': 'ac15fe5cbc14a23ab8cfe094f33bf5e6d656df6e6b6d1e1302d5855afc515c45',
+              'libc++_shared.so': 'd523468d62d9b603cb3354294d70d4b2feabf2c3f1e43b0c96c9aabf32813708',
+          }
+          dest = Path('flutter/android/app/src/main/jniLibs/arm64-v8a')
+          dest.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile(next(Path('base-apk').glob('*.apk'))) as apk:
+              for name, checksum in expected.items():
+                  data = apk.read('lib/arm64-v8a/' + name)
+                  assert hashlib.sha256(data).hexdigest() == checksum, name
+                  (dest / name).write_bytes(data)
+          PY
+      - name: Prepare the pinned Android verifier dependency
+        run: |
+          curl -fL --retry 3 https://static.crates.io/crates/rustls-platform-verifier-android/rustls-platform-verifier-android-0.1.1.crate -o verifier.crate
+          echo 'f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f  verifier.crate' | sha256sum -c -
+          mkdir verifier
+          tar -xf verifier.crate -C verifier
+          echo "RUSTLS_PLATFORM_VERIFIER_MAVEN_DIR=$GITHUB_WORKSPACE/verifier/rustls-platform-verifier-android-0.1.1/maven" >> "$GITHUB_ENV"
+      - name: Build ARM64 APK
+        run: |
+          sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' flutter/android/app/build.gradle
+          cd flutter
+          flutter build apk --release --target-platform android-arm64 --split-per-abi
+          mkdir -p ../signed-apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ../signed-apk/cuberemote-1.4.9-80-arm64.apk
+      - name: Select APK signing tools
+        run: echo "ANDROID_SIGN_TOOL_VERSION=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)" >> "$GITHUB_ENV"
+      - name: Sign APK with the existing application key
+        uses: r0adkll/sign-android-release@349ebdef58775b1e0d8099458af0816dc79b6407
+        id: sign
+        with:
+          releaseDirectory: signed-apk
+          signingKeyBase64: ${{ secrets.ANDROID_SIGNING_KEY }}
+          alias: ${{ secrets.ANDROID_ALIAS }}
+          keyStorePassword: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: ${{ env.ANDROID_SIGN_TOOL_VERSION }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cuberemote-1.4.9-80-arm64.apk
+          path: ${{ steps.sign.outputs.signedReleaseFile }}
+          if-no-files-found: error

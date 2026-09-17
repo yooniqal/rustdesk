@@ -36,3 +36,11 @@ bool shouldReleaseStaleMobileShift({
   }
   return true;
 }
+
+/// A Korean language key may share the Right Alt position. Prefer its logical
+/// meaning over a physical RAlt mapping, and map it to the peer's input switch.
+bool isKoreanInputToggle(
+        LogicalKeyboardKey logical, PhysicalKeyboardKey physical) =>
+    logical == LogicalKeyboardKey.hangulMode ||
+    logical == LogicalKeyboardKey.lang1 ||
+    physical == PhysicalKeyboardKey.lang1;

@@ -17,6 +17,8 @@ import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../models/state_model.dart';
 import 'input_modifier_utils.dart';
+import 'mobile_pointer_router.dart';
+import 'remote_shortcuts.dart';
 import 'relative_mouse_model.dart';
 import '../common.dart';
 import '../consts.dart';
@@ -420,7 +422,6 @@ class InputModel {
   // trackpad
   var _trackpadLastDelta = Offset.zero;
   var _stopFling = true;
-  var _fling = false;
   Timer? _flingTimer;
   final _flingBaseDelay = 30;
   final _trackpadAdjustPeerLinux = 0.06;
@@ -448,11 +449,13 @@ class InputModel {
   // mouse
   final isPhysicalMouse = false.obs;
 
-  // CubeRemote 트랙패드 드래그 지원:
-  // 손가락 화면터치는 hover 이벤트가 없고, 북커버 트랙패드는 hover 를 낸다.
-  // 따라서 "직전에 hover 가 있었던 touch" = 트랙패드로 보고 마우스처럼(버튼다운+이동+업) 처리한다.
-  int _lastHoverMs = 0;
-  bool _trackpadDown = false;
+  final mobilePointerRouter = MobilePointerRouter();
+
+  bool acceptTouchGesture(PointerDownEvent event) =>
+      !isMobile ||
+      (!mobilePointerRouter.isMouseDown(event) &&
+          !_shouldIgnoreTouchAfterMouse(DateTime.now().millisecondsSinceEpoch));
+
   int _lastButtons = 0;
   Offset lastMousePos = Offset.zero;
   int _lastWheelTsUs = 0;
@@ -639,7 +642,7 @@ class InputModel {
       if (!alt) {
         alt = true;
       }
-      toReleaseKeys.lastLAltKeyEvent = upEvent(e);
+      toReleaseKeys.lastRAltKeyEvent = upEvent(e);
     } else if (e.logicalKey == LogicalKeyboardKey.controlLeft) {
       if (!ctrl) {
         ctrl = true;
@@ -756,6 +759,13 @@ class InputModel {
       return KeyEventResult.handled;
     }
 
+    if (isMobile &&
+        peerPlatform != kPeerPlatformAndroid &&
+        isKoreanInputToggle(e.logicalKey, e.physicalKey)) {
+      if (e is RawKeyDownEvent && !e.repeat) switchRemoteInputSource();
+      return KeyEventResult.handled;
+    }
+
     bool iosCapsLock = false;
     if (isIOS && e is RawKeyDownEvent) {
       iosCapsLock = _getIosCapsFromRawCharacter(e);
@@ -836,6 +846,13 @@ class InputModel {
         return KeyEventResult.ignored;
       }
     }
+    if (isMobile &&
+        peerPlatform != kPeerPlatformAndroid &&
+        isKoreanInputToggle(e.logicalKey, e.physicalKey)) {
+      if (e is KeyDownEvent) switchRemoteInputSource();
+      return KeyEventResult.handled;
+    }
+
     if (isWindows || isLinux) {
       // Ignore meta keys. Because flutter window will loose focus if meta key is pressed.
       if (e.physicalKey == PhysicalKeyboardKey.metaLeft ||
@@ -1046,6 +1063,46 @@ class InputModel {
         command: command);
   }
 
+  void _sendShortcutKey(String name,
+      {required bool down,
+      required bool press,
+      required bool alt,
+      required bool ctrl,
+      required bool shift,
+      required bool command}) {
+    bind.sessionInputKey(
+        sessionId: sessionId,
+        name: name,
+        down: down,
+        press: press,
+        alt: alt,
+        ctrl: ctrl,
+        shift: shift,
+        command: command);
+  }
+
+  void inputChord(String key,
+      {bool ctrl = false,
+      bool alt = false,
+      bool shift = false,
+      bool command = false}) {
+    if (!keyboardPerm || isViewCamera) return;
+    sendRemoteChord(_sendShortcutKey, key: key,
+        ctrl: ctrl, alt: alt, shift: shift, command: command);
+  }
+
+  void switchRemoteApp() {
+    if (!keyboardPerm || isViewCamera) return;
+    sendRemoteAppSwitch(_sendShortcutKey,
+        isMac: peerPlatform == kPeerPlatformMacOS);
+  }
+
+  void switchRemoteInputSource() {
+    if (!keyboardPerm || isViewCamera) return;
+    sendRemoteInputSource(_sendShortcutKey,
+        isMac: peerPlatform == kPeerPlatformMacOS);
+  }
+
   static Map<String, dynamic> getMouseEventMove() => {
         'type': _kMouseEventMove,
         'buttons': 0,
@@ -1239,14 +1296,14 @@ class InputModel {
     // This ensures the remote doesn't have stuck modifier keys after exiting.
     // Use press: false, down: false to send key-up events without modifiers attached.
     final modifiersToRelease = [
-      'Control_L',
-      'Control_R',
-      'Alt_L',
-      'Alt_R',
-      'Shift_L',
-      'Shift_R',
-      'Meta_L', // Command/Super left
-      'Meta_R', // Command/Super right
+      'VK_CONTROL',
+      'RControl',
+      'VK_MENU',
+      'RAlt',
+      'VK_SHIFT',
+      'RShift',
+      'Meta', // Command/Super left
+      'RWin', // Command/Super right
     ];
 
     for (final key in modifiersToRelease) {
@@ -1289,12 +1346,6 @@ class InputModel {
     _relativeMouse.onWindowFocus();
   }
 
-  // CubeRemote: 북커버 트랙패드 등도 마우스처럼 취급한다.
-  // 손가락 터치(touch)만 제스처(터치) 경로로 보내고, 그 외 포인터(trackpad/mouse/stylus/unknown)는
-  // 마우스 이동/클릭으로 처리해 "안 눌러도 커서가 따라오게" 만든다.
-  bool _isMouseLike(ui.PointerDeviceKind kind) =>
-      kind != ui.PointerDeviceKind.touch;
-
   void onPointHoverImage(PointerHoverEvent e) {
     _stopFling = true;
     if (isViewOnly && !showMyCursor) return;
@@ -1317,13 +1368,6 @@ class InputModel {
       _relativeMouse.updatePointerRegionTopLeftGlobal(e);
     }
 
-    // hover 는 포인팅 장치(마우스/트랙패드)에서만 온다. 시각을 기록해두면 이어지는 touch 가
-    // 트랙패드인지(직전 hover 있음) 손가락인지(hover 없음) 구분할 수 있다.
-    _lastHoverMs = DateTime.now().millisecondsSinceEpoch;
-    // 물리마우스 모드는 **실제 마우스일 때만** 켠다.
-    // 트랙패드 hover 로도 켜버리면 한 번 켜진 뒤 손가락 터치까지 절대좌표 마우스로 처리돼
-    // "터치한 자리로 커서가 순간이동해서 조작이 안 되는" 상태가 된다(2026-08-05 보고).
-    // 트랙패드 클릭·드래그는 onPointDownImage 의 _asMouse 판별이 따로 처리하므로 여기서 켤 필요가 없다.
     if (realMouse && !isPhysicalMouse.value) {
       isPhysicalMouse.value = true;
     }
@@ -1420,13 +1464,11 @@ class InputModel {
   void _scheduleFling(double x, double y, int delay) {
     if (isViewCamera) return;
     if ((x == 0 && y == 0) || _stopFling) {
-      _fling = false;
       return;
     }
 
     _flingTimer = Timer(Duration(milliseconds: delay), () {
       if (_stopFling) {
-        _fling = false;
         return;
       }
 
@@ -1445,7 +1487,6 @@ class InputModel {
       var delay = _flingBaseDelay;
 
       if (dx == 0 && dy == 0) {
-        _fling = false;
         return;
       }
 
@@ -1457,16 +1498,9 @@ class InputModel {
   }
 
   void waitLastFlingDone() {
-    if (_fling) {
-      _stopFling = true;
-    }
-    for (var i = 0; i < 5; i++) {
-      if (!_fling) {
-        break;
-      }
-      sleep(Duration(milliseconds: 10));
-    }
+    _stopFling = true;
     _flingTimer?.cancel();
+    _flingTimer = null;
   }
 
   void onPointerPanZoomEnd(PointerPanZoomEndEvent e) {
@@ -1491,7 +1525,6 @@ class InputModel {
     }
     if (_trackpadLastDelta.dx.abs() > minFlingValue ||
         _trackpadLastDelta.dy.abs() > minFlingValue) {
-      _fling = true;
       _scheduleFling(
           _trackpadLastDelta.dx, _trackpadLastDelta.dy, _flingBaseDelay);
     }
@@ -1530,16 +1563,6 @@ class InputModel {
     return dt >= 0 && dt < kTouchAfterMouseWindowMs;
   }
 
-  // 트랙패드 클릭 직전에는 반드시 이동(hover)이 선행되므로 창을 짧게 잡는다.
-  // 길게 잡으면 트랙패드를 쓴 직후의 손가락 터치까지 마우스로 오인해 손가락 조작이 망가진다.
-  static const int _kTrackpadHoverWindowMs = 300;
-
-  // 트랙패드 판별: kind==touch 이지만 직전에 hover 가 있었으면 트랙패드로 본다(손가락은 hover 없음).
-  bool _asMouse(ui.PointerDeviceKind kind, int nowMs) =>
-      kind != ui.PointerDeviceKind.touch ||
-      (nowMs - _lastHoverMs) < _kTrackpadHoverWindowMs ||
-      _trackpadDown;
-
   void onPointDownImage(PointerDownEvent e) {
     debugPrint("onPointDownImage ${e.kind}");
     _stopFling = true;
@@ -1550,7 +1573,7 @@ class InputModel {
     if (isViewCamera) return;
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final asMouse = _asMouse(e.kind, nowMs);
+    final asMouse = mobilePointerRouter.down(e);
     if (asMouse) {
       // 실제 마우스 또는 트랙패드 → 마우스 버튼다운(드래그 시작 가능).
       if (!isPhysicalMouse.value) {
@@ -1558,9 +1581,6 @@ class InputModel {
       }
       _lastMouseDownTimeMs = nowMs;
       _lastMouseDownPos = e.position;
-      if (e.kind == ui.PointerDeviceKind.touch) {
-        _trackpadDown = true; // 트랙패드 클릭-드래그 시작
-      }
     }
 
     if (_relativeMouse.enabled.value) {
@@ -1598,20 +1618,15 @@ class InputModel {
       _relativeMouse.updatePointerRegionTopLeftGlobal(e);
     }
 
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-    final asMouse = _asMouse(e.kind, nowMs);
-    _trackpadDown = false; // 버튼 업 → 트랙패드 드래그 종료
-    if (!asMouse) return;
-    if (isPhysicalMouse.value) {
-      // In relative mouse mode, send button events without position.
-      // Use _relativeMouse.enabled.value consistently with the guard above.
-      if (_relativeMouse.enabled.value) {
-        _relativeMouse
-            .sendRelativeMouseButton(_getMouseEvent(e, _kMouseEventUp));
-      } else {
-        final canvasPosition = _pointerPositionForRemoteCanvas(e);
-        handleMouse(_getMouseEvent(e, _kMouseEventUp), canvasPosition);
-      }
+    if (!mobilePointerRouter.end(e)) return;
+    // In relative mouse mode, send button events without position.
+    // Use _relativeMouse.enabled.value consistently with the guard above.
+    if (_relativeMouse.enabled.value) {
+      _relativeMouse
+          .sendRelativeMouseButton(_getMouseEvent(e, _kMouseEventUp));
+    } else {
+      final canvasPosition = _pointerPositionForRemoteCanvas(e);
+      handleMouse(_getMouseEvent(e, _kMouseEventUp), canvasPosition);
     }
   }
 
@@ -1621,24 +1636,20 @@ class InputModel {
   void onPointCancelImage(PointerCancelEvent e) {
     if (isViewOnly && !showMyCursor) return;
     if (isViewCamera) return;
-    final wasDown = _trackpadDown;
-    _trackpadDown = false;
-    if (!wasDown && !_isMouseLike(e.kind)) return;
-    if (isPhysicalMouse.value) {
-      if (_relativeMouse.enabled.value) {
-        _relativeMouse
-            .sendRelativeMouseButton(_getMouseEvent(e, _kMouseEventUp));
-      } else {
-        final canvasPosition = _pointerPositionForRemoteCanvas(e);
-        handleMouse(_getMouseEvent(e, _kMouseEventUp), canvasPosition);
-      }
+    if (!mobilePointerRouter.end(e)) return;
+    if (_relativeMouse.enabled.value) {
+      _relativeMouse
+          .sendRelativeMouseButton(_getMouseEvent(e, _kMouseEventUp));
+    } else {
+      final canvasPosition = _pointerPositionForRemoteCanvas(e);
+      handleMouse(_getMouseEvent(e, _kMouseEventUp), canvasPosition);
     }
   }
 
   void onPointMoveImage(PointerMoveEvent e) {
     if (isViewOnly && !showMyCursor) return;
     if (isViewCamera) return;
-    if (!_asMouse(e.kind, DateTime.now().millisecondsSinceEpoch)) return;
+    if (!mobilePointerRouter.isMousePointer(e)) return;
 
     if (_relativeMouse.enabled.value) {
       _relativeMouse.updatePointerRegionTopLeftGlobal(e);
@@ -1650,12 +1661,10 @@ class InputModel {
       });
       _queryOtherWindowCoords = false;
     }
-    if (isPhysicalMouse.value) {
-      if (!_relativeMouse.handleRelativeMouseMove(e.localPosition)) {
-        final canvasPosition = _pointerPositionForRemoteCanvas(e);
-        handleMouse(_getMouseEvent(e, _kMouseEventMove), canvasPosition,
-            edgeScroll: useEdgeScroll);
-      }
+    if (!_relativeMouse.handleRelativeMouseMove(e.localPosition)) {
+      final canvasPosition = _pointerPositionForRemoteCanvas(e);
+      handleMouse(_getMouseEvent(e, _kMouseEventMove), canvasPosition,
+          edgeScroll: useEdgeScroll);
     }
   }
 

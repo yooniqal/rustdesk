@@ -34,6 +34,14 @@ if (flutterVersionName == null) {
 
 // Add rustls-platform-verifier Android support
 String findRustlsPlatformVerifierMavenDir() {
+    // Flutter-only builds can reuse an audited native artifact without Cargo.
+    def prebuiltMavenDir = System.getenv('RUSTLS_PLATFORM_VERIFIER_MAVEN_DIR')
+    if (prebuiltMavenDir) {
+        if (!new File(prebuiltMavenDir).isDirectory()) {
+            throw new GradleException("Invalid prebuilt verifier Maven directory")
+        }
+        return prebuiltMavenDir
+    }
     def dependencyText = providers.exec {
         it.workingDir = new File("../..")
         commandLine("cargo", "metadata", "--format-version", "1")

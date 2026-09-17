@@ -12,6 +12,20 @@ import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/input_model.dart';
 
 import './gestures.dart';
+import '../../models/mobile_pointer_router.dart';
+
+class _RemoteTapGestureRecognizer extends TapGestureRecognizer
+    with RemotePointerFilter {}
+class _RemoteDoubleTapGestureRecognizer extends DoubleTapGestureRecognizer
+    with RemotePointerFilter {}
+class _RemoteLongPressGestureRecognizer extends LongPressGestureRecognizer
+    with RemotePointerFilter {}
+class _RemoteHoldTapMoveGestureRecognizer extends HoldTapMoveGestureRecognizer
+    with RemotePointerFilter {}
+class _RemoteDoubleFinerTapGestureRecognizer extends DoubleFinerTapGestureRecognizer
+    with RemotePointerFilter {}
+class _RemoteCustomTouchGestureRecognizer extends CustomTouchGestureRecognizer
+    with RemotePointerFilter {}
 
 class RawKeyFocusScope extends StatelessWidget {
   final FocusNode? focusNode;
@@ -530,24 +544,27 @@ class _RawTouchGestureDetectorRegionState
   makeGestures(BuildContext context) {
     return <Type, GestureRecognizerFactory>{
       // Official
-      TapGestureRecognizer:
-          GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
-              () => TapGestureRecognizer(), (instance) {
+      _RemoteTapGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<_RemoteTapGestureRecognizer>(
+              () => _RemoteTapGestureRecognizer()
+                ..acceptPointer = inputModel.acceptTouchGesture, (instance) {
         instance
           ..onTapDown = onTapDown
           ..onTapUp = onTapUp
           ..onTap = onTap;
       }),
-      DoubleTapGestureRecognizer:
-          GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
-              () => DoubleTapGestureRecognizer(), (instance) {
+      _RemoteDoubleTapGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<_RemoteDoubleTapGestureRecognizer>(
+              () => _RemoteDoubleTapGestureRecognizer()
+                ..acceptPointer = inputModel.acceptTouchGesture, (instance) {
         instance
           ..onDoubleTapDown = onDoubleTapDown
           ..onDoubleTap = onDoubleTap;
       }),
-      LongPressGestureRecognizer:
-          GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-              () => LongPressGestureRecognizer(), (instance) {
+      _RemoteLongPressGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<_RemoteLongPressGestureRecognizer>(
+              () => _RemoteLongPressGestureRecognizer()
+                ..acceptPointer = inputModel.acceptTouchGesture, (instance) {
         instance
           ..onLongPressDown = onLongPressDown
           ..onLongPressUp = onLongPressUp
@@ -555,24 +572,27 @@ class _RawTouchGestureDetectorRegionState
           ..onLongPressMoveUpdate = onLongPressMoveUpdate;
       }),
       // Customized
-      HoldTapMoveGestureRecognizer:
-          GestureRecognizerFactoryWithHandlers<HoldTapMoveGestureRecognizer>(
-              () => HoldTapMoveGestureRecognizer(),
+      _RemoteHoldTapMoveGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<_RemoteHoldTapMoveGestureRecognizer>(
+              () => _RemoteHoldTapMoveGestureRecognizer()
+                ..acceptPointer = inputModel.acceptTouchGesture,
               (instance) => instance
                 ..onHoldDragStart = onHoldDragStart
                 ..onHoldDragUpdate = onHoldDragUpdate
                 ..onHoldDragCancel = onHoldDragCancel
                 ..onHoldDragEnd = onHoldDragEnd),
-      DoubleFinerTapGestureRecognizer:
-          GestureRecognizerFactoryWithHandlers<DoubleFinerTapGestureRecognizer>(
-              () => DoubleFinerTapGestureRecognizer(), (instance) {
+      _RemoteDoubleFinerTapGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<_RemoteDoubleFinerTapGestureRecognizer>(
+              () => _RemoteDoubleFinerTapGestureRecognizer()
+                ..acceptPointer = inputModel.acceptTouchGesture, (instance) {
         instance
           ..onDoubleFinerTap = onDoubleFinerTap
           ..onDoubleFinerTapDown = onDoubleFinerTapDown;
       }),
-      CustomTouchGestureRecognizer:
-          GestureRecognizerFactoryWithHandlers<CustomTouchGestureRecognizer>(
-              () => CustomTouchGestureRecognizer(), (instance) {
+      _RemoteCustomTouchGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<_RemoteCustomTouchGestureRecognizer>(
+              () => _RemoteCustomTouchGestureRecognizer()
+                ..acceptPointer = inputModel.acceptTouchGesture, (instance) {
         instance.onOneFingerPanStart =
             (DragStartDetails d) => onOneFingerPanStart(context, d);
         instance
