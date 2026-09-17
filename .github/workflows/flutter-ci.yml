@@ -96,13 +96,25 @@ jobs:
           mkdir verifier
           tar -xf verifier.crate -C verifier
           echo "RUSTLS_PLATFORM_VERIFIER_MAVEN_DIR=$GITHUB_WORKSPACE/verifier/rustls-platform-verifier-android-0.1.1/maven" >> "$GITHUB_ENV"
+      - name: Derive artifact version from the app
+        run: |
+          python3 - <<'PYCODE'
+          import os, re
+          from pathlib import Path
+          match = re.search(r'^version: ([0-9.]+)\+([0-9]+)$', Path('flutter/pubspec.yaml').read_text(), re.M)
+          if not match:
+              raise SystemExit('Missing app version')
+          version, build = match.groups()
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'APK_NAME=cuberemote-{version}-{build}-arm64.apk\n')
+          PYCODE
       - name: Build ARM64 APK
         run: |
           sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' flutter/android/app/build.gradle
           cd flutter
           flutter build apk --release --target-platform android-arm64 --split-per-abi
           mkdir -p ../signed-apk
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ../signed-apk/cuberemote-1.4.9-81-arm64.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ../signed-apk/"$APK_NAME"
       - name: Select APK signing tools
         run: echo "ANDROID_SIGN_TOOL_VERSION=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)" >> "$GITHUB_ENV"
       - name: Sign APK with the existing application key
@@ -118,6 +130,6 @@ jobs:
           BUILD_TOOLS_VERSION: ${{ env.ANDROID_SIGN_TOOL_VERSION }}
       - uses: actions/upload-artifact@v4
         with:
-          name: cuberemote-1.4.9-81-arm64.apk
+          name: ${{ env.APK_NAME }}
           path: ${{ steps.sign.outputs.signedReleaseFile }}
           if-no-files-found: error

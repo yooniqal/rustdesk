@@ -275,6 +275,16 @@ class _GestureHelpState extends State<GestureHelp> {
                     ],
                   ),
                 ),
+                if (!_touchMode && widget.inputModel != null)
+                  SwitchListTile(
+                    dense: true,
+                    title: const Text('두 손가락으로 스크롤'),
+                    subtitle: const Text('끄면 원격 화면을 이동합니다. 핀치는 항상 확대/축소합니다.'),
+                    value: widget.inputModel!.twoFingerScroll,
+                    onChanged: (value) => setState(() {
+                      widget.inputModel!.setTwoFingerScroll(value);
+                    }),
+                  ),
                 Container(
                     child: Wrap(
                   spacing: space,
@@ -337,7 +347,8 @@ class _GestureHelpState extends State<GestureHelp> {
                               width,
                               GestureIcons.iconGestureFDrag,
                               translate("Two-Finger Move"),
-                              translate("Canvas Move")),
+                              translate(widget.inputModel?.twoFingerScroll == true
+                                  ? "Mouse Wheel" : "Canvas Move")),
                           GestureInfo(
                               width,
                               GestureIcons.iconGesturePinch,

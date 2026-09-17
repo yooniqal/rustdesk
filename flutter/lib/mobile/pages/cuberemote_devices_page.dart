@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../common.dart';
 import '../../cuberemote_config.dart';
+import '../../models/cube_device_directory.dart';
 import 'home_page.dart';
 
 // CubeRemote 가맹점 목록 탭. 콘솔의 읽기전용 뷰어 API에서 목록을 받아
@@ -28,10 +29,15 @@ class CubeDevicesPage extends StatefulWidget implements PageShape {
   State<CubeDevicesPage> createState() => _CubeDevicesPageState();
 }
 
-class _CubeDevicesPageState extends State<CubeDevicesPage> {
-  List<dynamic> _devices = [];
-  bool _loading = false;
-  String? _error;
+class _CubeDevicesPageState extends State<CubeDevicesPage>
+    with WidgetsBindingObserver {
+  late final _directory = CubeDeviceDirectory(_fetch);
+  List<CubeDevice> get _devices => _directory.devices;
+  bool get _loading => _directory.loading;
+  String? get _error => _directory.error;
+  http.Client? _client;
+  bool _foreground = true;
+  String _filter = 'all';
   String _query = '';
   final Set<String> _collapsed = {}; // 접힌 지역명
   Timer? _timer;
@@ -39,32 +45,57 @@ class _CubeDevicesPageState extends State<CubeDevicesPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _directory.addListener(_changed);
     _load();
-    _timer = Timer.periodic(
-        const Duration(seconds: 20), (_) => _load(silent: true));
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_foreground && ModalRoute.of(context)?.isCurrent != false) _load();
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _directory.dispose();
+    _client?.close();
     super.dispose();
   }
 
-  Future<void> _load({bool silent = false}) async {
-    if (!silent) setState(() { _loading = true; _error = null; });
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    if (_foreground && ModalRoute.of(context)?.isCurrent != false) _load();
+  }
+
+  Future<void> _load() => _directory.refresh();
+
+  Future<List<CubeDevice>> _fetch() async {
+    final client = http.Client();
+    _client = client;
     try {
       final uri =
           Uri.parse('${CubeRemoteConfig.consoleUrl}/api/viewer/devices');
-      final res = await http.get(uri, headers: {
+      final res = await client.get(uri, headers: {
         'X-Viewer-Token': CubeRemoteConfig.viewerToken,
       }).timeout(const Duration(seconds: 12));
-      if (res.statusCode != 200) throw '서버 응답 ${res.statusCode}';
-      final list = jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
-      if (mounted) {
-        setState(() { _devices = list; _loading = false; _error = null; });
+      if (res.statusCode == 401 || res.statusCode == 403) {
+        throw const CubeDirectoryError('가맹점 목록 접근 설정을 확인해 주세요.');
       }
-    } catch (e) {
-      if (mounted) setState(() { _loading = false; if (!silent) _error = '$e'; });
+      if (res.statusCode == 429) {
+        throw const CubeDirectoryError('조회 요청이 많습니다. 잠시 후 다시 갱신합니다.');
+      }
+      if (res.statusCode != 200) {
+        throw CubeDirectoryError('서버 응답 오류 (${res.statusCode}). 다시 시도해 주세요.');
+      }
+      return decodeCubeDevices(utf8.decode(res.bodyBytes));
+    } finally {
+      client.close();
+      if (identical(_client, client)) _client = null;
     }
   }
 
@@ -85,50 +116,26 @@ class _CubeDevicesPageState extends State<CubeDevicesPage> {
     } catch (_) {}
   }
 
-  String _regionKey(dynamic d) {
-    final r = (d['region'] ?? '').toString().trim();
-    return r.isEmpty ? '지역미지정' : r;
-  }
-
-  // 지역 그룹 목록을 서버 순서(sortOrder) 유지하며 구성.
-  // 그룹 순서 = 각 지역이 처음 등장한 순서(= 웹 콘솔 정렬과 동일), '지역미지정'은 맨 뒤.
-  List<MapEntry<String, List<dynamic>>> _grouped(List<dynamic> rows) {
-    final map = <String, List<dynamic>>{};
-    final order = <String>[];
-    for (final d in rows) {
-      final k = _regionKey(d);
-      if (!map.containsKey(k)) { map[k] = []; order.add(k); }
-      map[k]!.add(d);
-    }
-    order.sort((a, b) {
-      if (a == '지역미지정') return 1;
-      if (b == '지역미지정') return -1;
-      return 0; // 원래 등장 순서 유지
-    });
-    return order.map((k) => MapEntry(k, map[k]!)).toList();
-  }
-
   @override
   Widget build(BuildContext context) {
     final q = _query.trim().toLowerCase();
-    final rows = _devices.where((d) {
-      if (q.isEmpty) return true;
-      final name = (d['name'] ?? '').toString().toLowerCase();
-      final region = (d['region'] ?? '').toString().toLowerCase();
-      final id = (d['deviceId'] ?? '').toString().toLowerCase();
-      return name.contains(q) || region.contains(q) || id.contains(q);
-    }).toList();
-    final groups = _grouped(rows);
+    final rows = _devices
+        .where((d) =>
+            d.matches(q) &&
+            (_filter == 'all' ||
+                (_filter == 'online' ? d.online : d.state == 'attention')))
+        .toList();
+    final groups = groupCubeDevices(rows);
 
     // 플랫한 위젯 리스트로 펼침(그룹 헤더 + 카드)
-    final items = <Widget>[];
+    final items = <Object>[];
     for (final g in groups) {
       final region = g.key;
       final list = g.value;
       final collapsed = _collapsed.contains(region);
-      items.add(_groupHeader(region, list.length, collapsed));
+      items.add(g);
       if (!collapsed) {
-        for (final d in list) items.add(_deviceCard(d));
+        items.addAll(list);
       }
     }
 
@@ -160,10 +167,34 @@ class _CubeDevicesPageState extends State<CubeDevicesPage> {
               ],
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Wrap(spacing: 8, children: [
+              for (final entry in {
+                'all': '전체',
+                'online': '온라인',
+                'attention': '점검 필요'
+              }.entries)
+                ChoiceChip(
+                    label: Text(entry.value),
+                    selected: _filter == entry.key,
+                    onSelected: (_) => setState(() => _filter = entry.key)),
+              IconButton(
+                  tooltip: '새로고침',
+                  icon: const Icon(Icons.refresh),
+                  onPressed: _loading ? null : _load),
+            ]),
+          ),
+          if (_directory.updatedAt != null)
+            Text(
+                '마지막 갱신 ${TimeOfDay.fromDateTime(_directory.updatedAt!).format(context)} · ${rows.length}대',
+                style: Theme.of(context).textTheme.bodySmall),
+          if (_loading && _devices.isNotEmpty) const LinearProgressIndicator(),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Text('불러오기 오류: $_error',
+              child: Text(
+                  '${_devices.isNotEmpty ? '이전 목록 표시 중 · ' : ''}$_error',
                   style: const TextStyle(color: Colors.redAccent)),
             ),
           Expanded(
@@ -171,9 +202,21 @@ class _CubeDevicesPageState extends State<CubeDevicesPage> {
               onRefresh: _load,
               child: _loading && _devices.isEmpty
                   ? const Center(child: CircularProgressIndicator())
-                  : ListView(
+                  : ListView.builder(
                       physics: const AlwaysScrollableScrollPhysics(),
-                      children: items,
+                      itemCount: items.isEmpty ? 1 : items.length,
+                      itemBuilder: (context, index) {
+                        if (items.isEmpty)
+                          return const Padding(
+                              padding: EdgeInsets.all(32),
+                              child: Center(child: Text('표시할 가맹점이 없습니다.')));
+                        final item = items[index];
+                        if (item is CubeDevice) return _deviceCard(item);
+                        final group =
+                            item as MapEntry<String, List<CubeDevice>>;
+                        return _groupHeader(group.key, group.value.length,
+                            _collapsed.contains(group.key));
+                      },
                     ),
             ),
           ),
@@ -206,34 +249,49 @@ class _CubeDevicesPageState extends State<CubeDevicesPage> {
     );
   }
 
-  Widget _deviceCard(dynamic d) {
-    final online = d['online'] == true;
-    final name = (d['name'] ?? '-').toString();
-    final id = (d['deviceId'] ?? '').toString();
+  Widget _deviceCard(CubeDevice d) {
+    final name = d.name;
+    final id = d.id;
+    final color = _error != null
+        ? Colors.orange
+        : switch (d.state) {
+            'ready' => Colors.green,
+            'attention' => Colors.orange,
+            'offline' => Colors.grey,
+            _ => Colors.blueGrey,
+          };
     return Card(
+      key: ValueKey(id),
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: ListTile(
-        leading: Icon(Icons.circle,
-            size: 12, color: online ? Colors.green : Colors.grey),
-        title:
-            Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(id),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 파일 전송(이미지 포함) 모드로 접속
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(Icons.circle, size: 12, color: color),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold))),
+            const SizedBox(width: 8),
+            Text(d.statusLabel, style: TextStyle(color: color)),
+          ]),
+          const SizedBox(height: 4),
+          Text('$id${d.platform.isEmpty ? '' : ' · ${d.platform}'}',
+              style: Theme.of(context).textTheme.bodySmall),
+          Text(d.statusDescription,
+              style: Theme.of(context).textTheme.bodySmall),
+          Row(mainAxisAlignment: MainAxisAlignment.end, children: [
             IconButton(
-              tooltip: '파일 전송',
-              icon: const Icon(Icons.folder_open),
-              onPressed: () => _connectFile(id),
-            ),
+                tooltip: '파일 전송',
+                icon: const Icon(Icons.folder_open),
+                onPressed: () => _connectFile(id)),
+            const SizedBox(width: 8),
             ElevatedButton(
-              onPressed: () => _connect(id),
-              child: const Text('연결'),
-            ),
-          ],
-        ),
-        // 실수 접속 방지: 카드 전체 탭이 아니라 버튼으로만 접속한다(스크롤 중 오접속 방지).
+                onPressed: () => _connect(id), child: const Text('연결')),
+          ]),
+        ]),
       ),
     );
   }

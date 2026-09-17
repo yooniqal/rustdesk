@@ -24,6 +24,8 @@ class MobilePointerRouter {
   bool isMousePointer(PointerEvent event) =>
       _mousePointers.contains(event.pointer);
 
+  void reset() => _mousePointers.clear();
+
   bool end(PointerEvent event) => _mousePointers.remove(event.pointer);
 }
 

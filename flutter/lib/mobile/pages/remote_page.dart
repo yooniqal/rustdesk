@@ -66,6 +66,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Timer? _timer;
   bool _showBar = !isWebDesktop;
   bool _showGestureHelp = false;
+  bool _showKeyTools = false;
   String _value = initText;   // 입력창(_textController)도 initText 로 시작한다 — 같은 값이어야 diff 가 성립
   Orientation? _currentOrientation;
   final _uniqueKey = UniqueKey();
@@ -165,7 +166,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   @override
   Future<void> dispose() async {
     WidgetsBinding.instance.removeObserver(this);
-    inputModel.releaseModifiers();
+    inputModel.releaseAllInputs();
     // Close the session up-front. `gFFI.close()` below only calls `sessionClose`
     // after several awaits (canvas save, image update, the `enable_soft_keyboard`
     // platform call), so if the app is backgrounded while this page is disposing,
@@ -211,7 +212,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       trySyncClipboard();
       if (mounted) setState(() {});
     } else if (state == AppLifecycleState.inactive) {
-      inputModel.releaseModifiers();
+      inputModel.releaseAllInputs();
     }
   }
 
@@ -505,7 +506,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final keyboardIsVisible =
         keyboardVisibilityController.isVisible && _showEdit;
-    final showActionButton = !_showBar || keyboardIsVisible || _showGestureHelp;
+    final showActionButton = !_showBar || keyboardIsVisible || _showGestureHelp || _showKeyTools;
 
     return WillPopScope(
       onWillPop: () async {
@@ -523,7 +524,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               : FloatingActionButton(
                   mini: !keyboardIsVisible,
                   child: Icon(
-                    (keyboardIsVisible || _showGestureHelp)
+                    (keyboardIsVisible || _showGestureHelp || _showKeyTools)
                         ? Icons.expand_more
                         : Icons.expand_less,
                     color: Colors.white,
@@ -536,6 +537,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         gFFI.invokeMethod("enable_soft_keyboard", false);
                         _mobileFocusNode.unfocus();
                         _physicalFocusNode.requestFocus();
+                      } else if (_showKeyTools) {
+                        _showKeyTools = false;
                       } else if (_showGestureHelp) {
                         _showGestureHelp = false;
                       } else {
@@ -665,8 +668,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 color: Colors.white,
                                 tooltip: '조합키 / 기능키',
                                 icon: const Icon(Icons.keyboard_command_key),
-                                onPressed: () => setState(
-                                    () => _showGestureHelp = !_showGestureHelp),
+                                onPressed: () => setState(() {
+                                  _showKeyTools = !_showKeyTools;
+                                  _showGestureHelp = false;
+                                }),
+                              ),
+                              IconButton(
+                                color: Colors.white,
+                                tooltip: '마우스 / 터치 설정',
+                                icon: Icon(ffiModel.touchMode ? Icons.touch_app : Icons.mouse),
+                                onPressed: () => setState(() {
+                                  _showGestureHelp = !_showGestureHelp;
+                                  _showKeyTools = false;
+                                }),
                               ),
                             ]) +
                   // CubeRemote: 채팅 아이콘 제거하고 자주 쓰는 조합키를 하단바에 상시 표시.
@@ -735,7 +749,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             ),
             KeyHelpTools(
                 keyboardIsVisible: keyboardIsVisible,
-                showGestureHelp: _showGestureHelp),
+                showGestureHelp: _showKeyTools),
             SizedBox(
               width: 0,
               height: 0,
@@ -947,12 +961,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   /// aka changeTouchMode
   BottomAppBar getGestureHelp() {
     return BottomAppBar(
-        child: SingleChildScrollView(
-            controller: ScrollController(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.45),
+          child: SingleChildScrollView(
             padding: EdgeInsets.symmetric(vertical: 10),
             child: GestureHelp(
               touchMode: gFFI.ffiModel.touchMode,
               onTouchModeChange: (t) {
+                inputModel.releaseAllInputs();
                 gFFI.ffiModel.toggleTouchMode();
                 final v = gFFI.ffiModel.touchMode ? 'Y' : 'N';
                 bind.mainSetLocalOption(key: kOptionTouchMode, value: v);
@@ -960,7 +976,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               },
               virtualMouseMode: gFFI.ffiModel.virtualMouseMode,
               inputModel: gFFI.inputModel,
-            )));
+            ))));
   }
 
   // * Currently mobile does not enable map mode
@@ -1072,7 +1088,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       wrap(isMac ? ' Cmd ' : isLinux ? 'Super' : ' Win ', () {
         setState(() => inputModel.command = !inputModel.command);
       }, active: inputModel.command),
-      wrap('키 해제', () => setState(inputModel.releaseModifiers)),
+      wrap('키 해제', () => setState(inputModel.releaseAllInputs)),
     ];
     final keys = <Widget>[
       wrap('한/영', inputModel.switchRemoteInputSource),

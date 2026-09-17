@@ -1075,13 +1075,21 @@ class InputModel {
     await sendMouse('up', button);
   }
 
-  /// Send scroll event with scroll distance [y].
-  Future<void> scroll(int y) async {
-    if (isViewCamera) return;
-    await bind.sessionSendMouse(
-        sessionId: sessionId,
-        msg: json
-            .encode(modify({'id': id, 'type': 'wheel', 'y': y.toString()})));
+  late bool twoFingerScroll =
+      bind.mainGetLocalOption(key: 'mobile-two-finger-scroll') != 'N';
+
+  void setTwoFingerScroll(bool value) {
+    twoFingerScroll = value;
+    bind.mainSetLocalOption(key: 'mobile-two-finger-scroll', value: value ? 'Y' : 'N');
+  }
+
+  Future<void> scroll(int y) => scroll2d(0, y);
+
+  Future<void> scroll2d(int x, int y) async {
+    if (!keyboardPerm || isViewOnly || isViewCamera || (x == 0 && y == 0)) return;
+    await bind.sessionSendMouse(sessionId: sessionId,
+        msg: json.encode(modify({'id': id, 'type': 'wheel',
+          'x': x.toString(), 'y': y.toString()})));
   }
 
   /// Reset key modifiers to false, including [shift], [ctrl], [alt] and [command].
@@ -1107,10 +1115,25 @@ class InputModel {
         msg: json.encode(modify({'type': type, 'buttons': button.value})));
   }
 
+  /// Matching releases must not be dropped when permission changes mid-drag.
+  Future<void> releaseMouseButton(MouseButtons button) async {
+    if (!isViewCamera) await _sendMouseUnchecked('up', button);
+  }
+
+  void releaseAllInputs() {
+    releaseModifiers();
+    waitLastFlingDone();
+    mobilePointerRouter.reset();
+    _lastButtons = 0;
+    for (final button in MouseButtons.values) {
+      releaseMouseButton(button);
+    }
+  }
+
   /// Send mouse press event.
   Future<void> sendMouse(String type, MouseButtons button) async {
-    if (!keyboardPerm) return;
-    if (isViewCamera) return;
+    if (type == 'up') return releaseMouseButton(button);
+    if (!keyboardPerm || isViewOnly || isViewCamera) return;
     await _sendMouseUnchecked(type, button);
   }
 
@@ -1500,14 +1523,17 @@ class InputModel {
 
   void onPointUpImage(PointerUpEvent e) {
     if (isDesktop) _queryOtherWindowCoords = false;
-    if (isViewOnly && !showMyCursor) return;
+    if (!mobilePointerRouter.end(e)) return;
+    if (isViewOnly || !keyboardPerm) {
+      releaseAllInputs();
+      return;
+    }
     if (isViewCamera) return;
 
     if (_relativeMouse.enabled.value) {
       _relativeMouse.updatePointerRegionTopLeftGlobal(e);
     }
 
-    if (!mobilePointerRouter.end(e)) return;
     // In relative mouse mode, send button events without position.
     // Use _relativeMouse.enabled.value consistently with the guard above.
     if (_relativeMouse.enabled.value) {
@@ -1523,9 +1549,12 @@ class InputModel {
   // 트랙패드 드래그 중이었다면 원격의 왼쪽 버튼이 눌린 채로 남아 조작이 불가능해진다
   // (2026-08-05 보고: 좌클릭이 눌려 있는 버그). 여기서 반드시 버튼을 놓아준다.
   void onPointCancelImage(PointerCancelEvent e) {
-    if (isViewOnly && !showMyCursor) return;
-    if (isViewCamera) return;
     if (!mobilePointerRouter.end(e)) return;
+    if (isViewOnly || !keyboardPerm) {
+      releaseAllInputs();
+      return;
+    }
+    if (isViewCamera) return;
     if (_relativeMouse.enabled.value) {
       _relativeMouse
           .sendRelativeMouseButton(_getMouseEvent(e, _kMouseEventUp));

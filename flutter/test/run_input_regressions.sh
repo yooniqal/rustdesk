@@ -6,10 +6,13 @@ flutter_bin="${1:-$(command -v flutter)}"
 test_dir="$(mktemp -d "${TMPDIR:-/tmp}/cuberemote-input.XXXXXX")"
 trap 'rm -rf "$test_dir"' EXIT
 mkdir -p "$test_dir/flutter/lib/models" "$test_dir/flutter/test" "$test_dir/src"
-for module in mobile_pointer_router remote_shortcuts input_modifier_utils raw_key_tracker; do
+for module in mobile_pointer_router remote_shortcuts input_modifier_utils raw_key_tracker remote_drag_controller two_finger_scroll cube_device_directory; do
     cp "$flutter_dir/lib/models/$module.dart" "$test_dir/flutter/lib/models/"
     cp "$flutter_dir/test/${module}_test.dart" "$test_dir/flutter/test/"
 done
+mkdir -p "$test_dir/flutter/lib/common/widgets"
+cp "$flutter_dir/lib/common/widgets/gestures.dart" "$test_dir/flutter/lib/common/widgets/"
+cp "$flutter_dir/test/remote_gestures_test.dart" "$test_dir/flutter/test/"
 cp "$flutter_dir/../src/client.rs" "$test_dir/src/"
 cat > "$test_dir/flutter/pubspec.yaml" <<'YAML'
 name: cuberemote_input_regression
