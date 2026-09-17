@@ -51,7 +51,13 @@ jobs:
           flutter-version: '3.24.5'
           cache: true
       - name: Apply the existing Flutter SDK patch
-        run: git -C "$FLUTTER_ROOT" apply "$GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+        run: |
+          sdk_patch="$GITHUB_WORKSPACE/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+          if git -C "$FLUTTER_ROOT" apply --reverse --check "$sdk_patch" 2>/dev/null; then
+            echo 'Flutter SDK patch already present in cache'
+          else
+            git -C "$FLUTTER_ROOT" apply "$sdk_patch"
+          fi
       - name: Input regression tests
         run: bash flutter/test/run_input_regressions.sh
       - uses: actions/download-artifact@v4
