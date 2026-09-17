@@ -7,10 +7,12 @@ enum TwoFingerIntent { pending, scroll, zoom }
 class TwoFingerScroll {
   TwoFingerIntent intent = TwoFingerIntent.pending;
   Offset _pending = Offset.zero;
+  int _pinchSamples = 0;
 
   void reset() {
     intent = TwoFingerIntent.pending;
     _pending = Offset.zero;
+    _pinchSamples = 0;
   }
 
   TwoFingerIntent update(double scale, Offset delta) {
@@ -19,10 +21,15 @@ class TwoFingerScroll {
     _pending += delta;
     if (intent == TwoFingerIntent.pending) {
       if ((scale - 1).abs() >= 0.08) {
-        intent = TwoFingerIntent.zoom;
-        _pending = Offset.zero;
-      } else if (_pending.distance >= 12) {
-        intent = TwoFingerIntent.scroll;
+        // Android reports the contacts separately. A parallel swipe briefly
+        // changes span until the second contact's matching move arrives.
+        if (++_pinchSamples >= 3) {
+          intent = TwoFingerIntent.zoom;
+          _pending = Offset.zero;
+        }
+      } else {
+        _pinchSamples = 0;
+        if (_pending.distance >= 12) intent = TwoFingerIntent.scroll;
       }
     }
     return intent;

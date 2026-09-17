@@ -13,7 +13,9 @@ void main() {
   });
   test('pinch zoom never emits scroll steps', () {
     final gesture = TwoFingerScroll();
-    expect(gesture.update(1.12, const Offset(0, 8)), TwoFingerIntent.zoom);
+    expect(gesture.update(1.12, const Offset(0, 8)), TwoFingerIntent.pending);
+    gesture.update(1.16, const Offset(0, 2));
+    expect(gesture.update(1.2, const Offset(0, 2)), TwoFingerIntent.zoom);
     gesture.update(1.01, const Offset(0, 40));
     expect(gesture.takeWheelSteps(), Offset.zero);
   });
@@ -35,8 +37,20 @@ void main() {
     gesture.reset();
     expect(gesture.intent, TwoFingerIntent.pending);
     gesture.update(0.8, const Offset(0, 1));
+    gesture.update(0.75, const Offset(0, 1));
+    gesture.update(0.7, const Offset(0, 1));
     expect(gesture.intent, TwoFingerIntent.zoom);
     expect(gesture.takeWheelSteps(), Offset.zero);
+  });
+  test('separate contact updates during a parallel swipe do not cause zoom',
+      () {
+    final gesture = TwoFingerScroll();
+    // First contact moves; the matching second contact restores the span.
+    expect(gesture.update(1.2, const Offset(0, 20)), TwoFingerIntent.pending);
+    expect(gesture.update(1, const Offset(0, 20)), TwoFingerIntent.scroll);
+    expect(gesture.takeWheelSteps(), const Offset(0, 2));
+    expect(gesture.update(1.3, const Offset(0, 8)), TwoFingerIntent.scroll);
+    expect(gesture.takeWheelSteps(), const Offset(0, 1));
   });
   test('invalid deltas cannot poison later input', () {
     final gesture = TwoFingerScroll();
