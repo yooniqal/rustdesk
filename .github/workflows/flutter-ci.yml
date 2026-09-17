@@ -96,7 +96,7 @@ jobs:
           cd flutter
           flutter build apk --release --target-platform android-arm64 --split-per-abi
           mkdir -p ../signed-apk
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ../signed-apk/cuberemote-1.4.9-80-arm64.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ../signed-apk/cuberemote-1.4.9-81-arm64.apk
       - name: Select APK signing tools
         run: echo "ANDROID_SIGN_TOOL_VERSION=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)" >> "$GITHUB_ENV"
       - name: Sign APK with the existing application key
@@ -112,6 +112,6 @@ jobs:
           BUILD_TOOLS_VERSION: ${{ env.ANDROID_SIGN_TOOL_VERSION }}
       - uses: actions/upload-artifact@v4
         with:
-          name: cuberemote-1.4.9-80-arm64.apk
+          name: cuberemote-1.4.9-81-arm64.apk
           path: ${{ steps.sign.outputs.signedReleaseFile }}
           if-no-files-found: error

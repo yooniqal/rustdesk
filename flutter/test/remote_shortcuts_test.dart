@@ -75,6 +75,39 @@ void main() {
     expect(recorder.events[4]['shift'], isFalse);
     expect(recorder.events[4]['ctrl'], isTrue);
   });
+  test('modifier recovery sends only key-up with all flags cleared', () {
+    final recorder = Recorder();
+    sendRemoteModifierRelease(recorder.send);
+    expect(
+        recorder.events.map((e) => e['name']),
+        unorderedEquals([
+          'VK_CONTROL',
+          'RControl',
+          'VK_MENU',
+          'RAlt',
+          'VK_SHIFT',
+          'RShift',
+          'Meta',
+          'RWin',
+        ]));
+    for (final event in recorder.events) {
+      for (final flag in ['down', 'press', 'ctrl', 'alt', 'shift', 'command']) {
+        expect(event[flag], isFalse, reason: '$event');
+      }
+    }
+  });
+  test('task manager followed by copy does not carry over Shift', () {
+    final recorder = Recorder();
+    sendRemoteChord(recorder.send, key: 'VK_ESCAPE', ctrl: true, shift: true);
+    sendRemoteChord(recorder.send, key: 'VK_C', ctrl: true);
+    final copy = recorder.events
+        .singleWhere((e) => e['name'] == 'VK_C' && e['down'] == true);
+    expect(copy['ctrl'], isTrue);
+    expect(copy['shift'], isFalse);
+    expect(copy['alt'], isFalse);
+    expect(copy['command'], isFalse);
+    expect(recorder.edges.last, 'VK_CONTROL:up');
+  });
   test('shortcut key names exist in the Rust protocol map', () {
     final map = File('../src/client.rs').readAsStringSync();
     final recorder = Recorder();
@@ -82,6 +115,22 @@ void main() {
         key: 'VK_TAB', ctrl: true, alt: true, shift: true, command: true);
     sendRemoteInputSource(recorder.send, isMac: false);
     sendRemoteInputSource(recorder.send, isMac: true);
+    sendRemoteModifierRelease(recorder.send);
+    for (final key in [
+      'VK_A',
+      'VK_C',
+      'VK_V',
+      'VK_X',
+      'VK_Z',
+      'VK_S',
+      'VK_R',
+      'VK_D',
+      'VK_ESCAPE',
+      'VK_ENTER',
+      'VK_F12'
+    ]) {
+      sendRemoteChord(recorder.send, key: key);
+    }
     for (final event in recorder.events) {
       expect(map, contains('("${event['name']}", Key::'),
           reason: '${event['name']}');

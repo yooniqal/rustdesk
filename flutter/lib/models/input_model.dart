@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'dart:ui' as ui;
@@ -19,6 +18,7 @@ import '../../models/state_model.dart';
 import 'input_modifier_utils.dart';
 import 'mobile_pointer_router.dart';
 import 'remote_shortcuts.dart';
+import 'raw_key_tracker.dart';
 import 'relative_mouse_model.dart';
 import '../common.dart';
 import '../consts.dart';
@@ -182,111 +182,6 @@ class PointerEventToRust {
         'v': value,
       }
     };
-  }
-}
-
-class ToReleaseRawKeys {
-  RawKeyEvent? lastLShiftKeyEvent;
-  RawKeyEvent? lastRShiftKeyEvent;
-  RawKeyEvent? lastLCtrlKeyEvent;
-  RawKeyEvent? lastRCtrlKeyEvent;
-  RawKeyEvent? lastLAltKeyEvent;
-  RawKeyEvent? lastRAltKeyEvent;
-  RawKeyEvent? lastLCommandKeyEvent;
-  RawKeyEvent? lastRCommandKeyEvent;
-  RawKeyEvent? lastSuperKeyEvent;
-
-  reset() {
-    lastLShiftKeyEvent = null;
-    lastRShiftKeyEvent = null;
-    lastLCtrlKeyEvent = null;
-    lastRCtrlKeyEvent = null;
-    lastLAltKeyEvent = null;
-    lastRAltKeyEvent = null;
-    lastLCommandKeyEvent = null;
-    lastRCommandKeyEvent = null;
-    lastSuperKeyEvent = null;
-  }
-
-  updateKeyDown(LogicalKeyboardKey logicKey, RawKeyDownEvent e) {
-    if (e.isAltPressed) {
-      if (logicKey == LogicalKeyboardKey.altLeft) {
-        lastLAltKeyEvent = e;
-      } else if (logicKey == LogicalKeyboardKey.altRight) {
-        lastRAltKeyEvent = e;
-      }
-    } else if (e.isControlPressed) {
-      if (logicKey == LogicalKeyboardKey.controlLeft) {
-        lastLCtrlKeyEvent = e;
-      } else if (logicKey == LogicalKeyboardKey.controlRight) {
-        lastRCtrlKeyEvent = e;
-      }
-    } else if (e.isShiftPressed) {
-      if (logicKey == LogicalKeyboardKey.shiftLeft) {
-        lastLShiftKeyEvent = e;
-      } else if (logicKey == LogicalKeyboardKey.shiftRight) {
-        lastRShiftKeyEvent = e;
-      }
-    } else if (e.isMetaPressed) {
-      if (logicKey == LogicalKeyboardKey.metaLeft) {
-        lastLCommandKeyEvent = e;
-      } else if (logicKey == LogicalKeyboardKey.metaRight) {
-        lastRCommandKeyEvent = e;
-      } else if (logicKey == LogicalKeyboardKey.superKey) {
-        lastSuperKeyEvent = e;
-      }
-    }
-  }
-
-  updateKeyUp(LogicalKeyboardKey logicKey, RawKeyUpEvent e) {
-    if (e.isAltPressed) {
-      if (logicKey == LogicalKeyboardKey.altLeft) {
-        lastLAltKeyEvent = null;
-      } else if (logicKey == LogicalKeyboardKey.altRight) {
-        lastRAltKeyEvent = null;
-      }
-    } else if (e.isControlPressed) {
-      if (logicKey == LogicalKeyboardKey.controlLeft) {
-        lastLCtrlKeyEvent = null;
-      } else if (logicKey == LogicalKeyboardKey.controlRight) {
-        lastRCtrlKeyEvent = null;
-      }
-    } else if (e.isShiftPressed) {
-      if (logicKey == LogicalKeyboardKey.shiftLeft) {
-        lastLShiftKeyEvent = null;
-      } else if (logicKey == LogicalKeyboardKey.shiftRight) {
-        lastRShiftKeyEvent = null;
-      }
-    } else if (e.isMetaPressed) {
-      if (logicKey == LogicalKeyboardKey.metaLeft) {
-        lastLCommandKeyEvent = null;
-      } else if (logicKey == LogicalKeyboardKey.metaRight) {
-        lastRCommandKeyEvent = null;
-      } else if (logicKey == LogicalKeyboardKey.superKey) {
-        lastSuperKeyEvent = null;
-      }
-    }
-  }
-
-  release(KeyEventResult Function(RawKeyEvent e) handleRawKeyEvent) {
-    for (final key in [
-      lastLShiftKeyEvent,
-      lastRShiftKeyEvent,
-      lastLCtrlKeyEvent,
-      lastRCtrlKeyEvent,
-      lastLAltKeyEvent,
-      lastRAltKeyEvent,
-      lastLCommandKeyEvent,
-      lastRCommandKeyEvent,
-      lastSuperKeyEvent,
-    ]) {
-      if (key != null) {
-        handleRawKeyEvent(RawKeyUpEvent(
-          data: key.data,
-          character: key.character,
-        ));
-      }
-    }
   }
 }
 
@@ -1086,19 +981,40 @@ class InputModel {
       bool alt = false,
       bool shift = false,
       bool command = false}) {
-    if (!keyboardPerm || isViewCamera) return;
+    if (!keyboardPerm || isViewOnly || isViewCamera) return;
     sendRemoteChord(_sendShortcutKey, key: key,
         ctrl: ctrl, alt: alt, shift: shift, command: command);
   }
 
+  /// Toolbar keys must include explicit modifier edges on every platform.
+  void inputToolbarKey(String key) {
+    inputChord(key, ctrl: ctrl, alt: alt, shift: shift, command: command);
+  }
+
+  void sendCtrlAltDel() {
+    if (!keyboardPerm || isViewOnly || isViewCamera) return;
+    if (peerPlatform != kPeerPlatformWindows ||
+        parent.target?.ffiModel.pi.sasEnabled != true) return;
+    bind.sessionCtrlAltDel(sessionId: sessionId);
+  }
+
+  /// Release both sides even when an OS shortcut swallowed the matching up.
+  /// Releases must still go through if input permission changed while held.
+  void releaseModifiers() {
+    resetModifiers();
+    toReleaseKeys.reset();
+    toReleaseRawKeys.reset();
+    if (!isViewCamera) sendRemoteModifierRelease(_sendShortcutKey);
+  }
+
   void switchRemoteApp() {
-    if (!keyboardPerm || isViewCamera) return;
+    if (!keyboardPerm || isViewOnly || isViewCamera) return;
     sendRemoteAppSwitch(_sendShortcutKey,
         isMac: peerPlatform == kPeerPlatformMacOS);
   }
 
   void switchRemoteInputSource() {
-    if (!keyboardPerm || isViewCamera) return;
+    if (!keyboardPerm || isViewOnly || isViewCamera) return;
     sendRemoteInputSource(_sendShortcutKey,
         isMac: peerPlatform == kPeerPlatformMacOS);
   }
@@ -1292,35 +1208,7 @@ class InputModel {
   void exitRelativeMouseModeWithKeyRelease() {
     if (!_relativeMouse.enabled.value) return;
 
-    // First, send release events for all modifier keys to the remote.
-    // This ensures the remote doesn't have stuck modifier keys after exiting.
-    // Use press: false, down: false to send key-up events without modifiers attached.
-    final modifiersToRelease = [
-      'VK_CONTROL',
-      'RControl',
-      'VK_MENU',
-      'RAlt',
-      'VK_SHIFT',
-      'RShift',
-      'Meta', // Command/Super left
-      'RWin', // Command/Super right
-    ];
-
-    for (final key in modifiersToRelease) {
-      bind.sessionInputKey(
-        sessionId: sessionId,
-        name: key,
-        down: false,
-        press: false,
-        alt: false,
-        ctrl: false,
-        shift: false,
-        command: false,
-      );
-    }
-
-    // Reset local modifier state
-    resetModifiers();
+    releaseModifiers();
 
     // Now exit relative mouse mode
     _relativeMouse.setRelativeMouseMode(false);

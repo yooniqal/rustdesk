@@ -165,6 +165,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   @override
   Future<void> dispose() async {
     WidgetsBinding.instance.removeObserver(this);
+    inputModel.releaseModifiers();
     // Close the session up-front. `gFFI.close()` below only calls `sessionClose`
     // after several awaits (canvas save, image update, the `enable_soft_keyboard`
     // platform call), so if the app is backgrounded while this page is disposing,
@@ -208,6 +209,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       trySyncClipboard();
+      if (mounted) setState(() {});
+    } else if (state == AppLifecycleState.inactive) {
+      inputModel.releaseModifiers();
     }
   }
 
@@ -616,7 +620,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         mainAxisSize: MainAxisSize.max,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: <Widget>[
-          Row(
+          Expanded(child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
               children: <Widget>[
                     IconButton(
                       color: Colors.white,
@@ -657,9 +663,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                   onPressed: openKeyboard),
                               IconButton(
                                 color: Colors.white,
-                                icon: Icon(gFFI.ffiModel.touchMode
-                                    ? Icons.touch_app
-                                    : Icons.mouse),
+                                tooltip: '조합키 / 기능키',
+                                icon: const Icon(Icons.keyboard_command_key),
                                 onPressed: () => setState(
                                     () => _showGestureHelp = !_showGestureHelp),
                               ),
@@ -696,7 +701,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         showActions(widget.id);
                       },
                     ),
-                  ]),
+                  ]))),
           Obx(() => IconButton(
                 color: Colors.white,
                 icon: Icon(Icons.expand_more),
@@ -993,7 +998,7 @@ class KeyHelpTools extends StatefulWidget {
 }
 
 class _KeyHelpToolsState extends State<KeyHelpTools> {
-  var _more = true;
+  var _more = false;
   var _fn = false;
   var _pin = false;
   final _keyboardVisibilityController = KeyboardVisibilityController();
@@ -1005,7 +1010,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       {bool? active, IconData? icon}) {
     return TextButton(
         style: TextButton.styleFrom(
-          minimumSize: Size(0, 0),
+          minimumSize: Size(36, 36),
           padding: EdgeInsets.symmetric(vertical: 10, horizontal: 9.75),
           //adds padding inside the button
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1064,9 +1069,10 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       wrap('Shift', () {
         setState(() => inputModel.shift = !inputModel.shift);
       }, active: inputModel.shift),
-      wrap(isMac ? ' Cmd ' : ' Win ', () {
+      wrap(isMac ? ' Cmd ' : isLinux ? 'Super' : ' Win ', () {
         setState(() => inputModel.command = !inputModel.command);
       }, active: inputModel.command),
+      wrap('키 해제', () => setState(inputModel.releaseModifiers)),
     ];
     final keys = <Widget>[
       wrap('한/영', inputModel.switchRemoteInputSource),
@@ -1078,11 +1084,12 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       // Alt+Tab: 원터치 창 전환. Tab: 1회성. Win: 1회성 윈도우키(시작메뉴).
       // Ctrl/Alt 토글은 위 modifiers 행에 이미 있어 '누르면 계속 눌림' 방식으로 조합 가능.
       wrap(isMac ? 'Cmd+Tab' : 'Alt+Tab', inputModel.switchRemoteApp),
-      wrap(' Tab ', () {
-        inputModel.inputKey('VK_TAB');
-      }),
+      wrap('Tab', () => inputModel.inputToolbarKey('VK_TAB')),
+      wrap('Shift+Tab', () => inputModel.inputChord('VK_TAB', shift: true)),
+      wrap('Enter', () => inputModel.inputToolbarKey('VK_ENTER')),
+      wrap('Esc', () => inputModel.inputToolbarKey('VK_ESCAPE')),
       if (!isMac)
-        wrap(' Win ', () {
+        wrap(isLinux ? 'Super' : 'Win', () {
           inputModel.inputChord('Meta');
         }),
       wrap(
@@ -1115,115 +1122,113 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
               ),
           active: _more),
     ];
+    final shortcuts = <Widget>[
+      SizedBox(width: 9999),
+      for (final key in ['A', 'C', 'V', 'X', 'Z', 'S'])
+        wrap('${isMac ? 'Cmd' : 'Ctrl'}+$key',
+            () => inputModel.inputChord('VK_$key', ctrl: !isMac, command: isMac)),
+    ];
     final fn = <Widget>[
       SizedBox(width: 9999),
     ];
     for (var i = 1; i <= 12; ++i) {
       final name = 'F$i';
       fn.add(wrap(name, () {
-        inputModel.inputKey('VK_$name');
+        inputModel.inputToolbarKey('VK_$name');
       }));
     }
     final more = <Widget>[
       SizedBox(width: 9999),
       wrap('Esc', () {
-        inputModel.inputKey('VK_ESCAPE');
+        inputModel.inputToolbarKey('VK_ESCAPE');
       }),
       wrap('Tab', () {
-        inputModel.inputKey('VK_TAB');
+        inputModel.inputToolbarKey('VK_TAB');
       }),
       wrap('Home', () {
-        inputModel.inputKey('VK_HOME');
+        inputModel.inputToolbarKey('VK_HOME');
       }),
       wrap('End', () {
-        inputModel.inputKey('VK_END');
+        inputModel.inputToolbarKey('VK_END');
       }),
       wrap('Ins', () {
-        inputModel.inputKey('VK_INSERT');
+        inputModel.inputToolbarKey('VK_INSERT');
       }),
       wrap('Del', () {
-        inputModel.inputKey('VK_DELETE');
+        inputModel.inputToolbarKey('VK_DELETE');
       }),
       wrap('PgUp', () {
-        inputModel.inputKey('VK_PRIOR');
+        inputModel.inputToolbarKey('VK_PRIOR');
       }),
       wrap('PgDn', () {
-        inputModel.inputKey('VK_NEXT');
+        inputModel.inputToolbarKey('VK_NEXT');
       }),
       // to-do: support PrtScr on Mac
       if (isWin || isLinux)
         wrap('PrtScr', () {
-          inputModel.inputKey('VK_SNAPSHOT');
+          inputModel.inputToolbarKey('VK_SNAPSHOT');
         }),
       if (isWin || isLinux)
         wrap('ScrollLock', () {
-          inputModel.inputKey('VK_SCROLL');
+          inputModel.inputToolbarKey('VK_SCROLL');
         }),
       if (isWin || isLinux)
         wrap('Pause', () {
-          inputModel.inputKey('VK_PAUSE');
+          inputModel.inputToolbarKey('VK_PAUSE');
         }),
       if (isWin || isLinux)
         // Maybe it's better to call it "Menu"
         // https://en.wikipedia.org/wiki/Menu_key
         wrap('Menu', () {
-          inputModel.inputKey('Apps');
+          inputModel.inputToolbarKey('Apps');
         }),
       wrap('Enter', () {
-        inputModel.inputKey('VK_ENTER');
+        inputModel.inputToolbarKey('VK_ENTER');
       }),
       SizedBox(width: 9999),
       wrap('', () {
-        inputModel.inputKey('VK_LEFT');
+        inputModel.inputToolbarKey('VK_LEFT');
       }, icon: Icons.keyboard_arrow_left),
       wrap('', () {
-        inputModel.inputKey('VK_UP');
+        inputModel.inputToolbarKey('VK_UP');
       }, icon: Icons.keyboard_arrow_up),
       wrap('', () {
-        inputModel.inputKey('VK_DOWN');
+        inputModel.inputToolbarKey('VK_DOWN');
       }, icon: Icons.keyboard_arrow_down),
       wrap('', () {
-        inputModel.inputKey('VK_RIGHT');
+        inputModel.inputToolbarKey('VK_RIGHT');
       }, icon: Icons.keyboard_arrow_right),
-      wrap(isMac ? 'Cmd+C' : 'Ctrl+C', () {
-        sendPrompt(isMac, 'VK_C');
-      }),
-      wrap(isMac ? 'Cmd+V' : 'Ctrl+V', () {
-        sendPrompt(isMac, 'VK_V');
-      }),
-      wrap(isMac ? 'Cmd+S' : 'Ctrl+S', () {
-        sendPrompt(isMac, 'VK_S');
-      }),
-      // CubeRemote 원터치 조합키
-      wrap(isMac ? 'Cmd+Tab' : 'Alt+Tab', inputModel.switchRemoteApp),
       if (isWin)
-        wrap('Win+D', () {
-          sendCombo(win: true, key: 'VK_D');
-        }),
+        wrap('Win+D', () => inputModel.inputChord('VK_D', command: true)),
       if (isWin)
-        wrap('C+A+Del', () {
-          sendCombo(ctrl: true, alt: true, key: 'VK_DELETE');
-        }),
+        wrap('Win+R', () => inputModel.inputChord('VK_R', command: true)),
+      if (isWin)
+        wrap('Ctrl+Shift+Esc',
+            () => inputModel.inputChord('VK_ESCAPE', ctrl: true, shift: true)),
+      if (isWin && pi.sasEnabled)
+        wrap('Ctrl+Alt+Del', inputModel.sendCtrlAltDel),
     ];
     final space = size.width > 320 ? 4.0 : 2.0;
-    // 500 ms is long enough for this widget to be built!
-    Future.delayed(Duration(milliseconds: 500), () {
-      _updateRect();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _updateRect();
     });
     return Container(
         key: _key,
+        constraints: BoxConstraints(maxHeight:
+            (size.height - MediaQuery.of(context).viewInsets.bottom) * 0.6),
         color: Color(0xAA000000),
         padding: EdgeInsets.only(
             top: _keyboardVisibilityController.isVisible ? 24 : 4, bottom: 8),
-        child: Wrap(
+        child: SingleChildScrollView(child: Wrap(
           spacing: space,
           runSpacing: space,
           children: <Widget>[SizedBox(width: 9999)] +
               modifiers +
               keys +
+              shortcuts +
               (_fn ? fn : []) +
               (_more ? more : []),
-        ));
+        )));
   }
 }
 
@@ -1582,20 +1587,6 @@ TTextMenu? getResolutionMenu(FFI ffi, String id) {
       });
     },
   );
-}
-
-void sendPrompt(bool isMac, String key) {
-  gFFI.inputModel.inputChord(key, ctrl: !isMac, command: isMac);
-}
-
-void sendCombo(
-    {bool ctrl = false,
-    bool alt = false,
-    bool shift = false,
-    bool win = false,
-    required String key}) {
-  gFFI.inputModel.inputChord(key,
-      ctrl: ctrl, alt: alt, shift: shift, command: win);
 }
 
 class FABLocation extends FloatingActionButtonLocation {

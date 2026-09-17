@@ -47,6 +47,28 @@ void sendRemoteAppSwitch(RemoteKeySender send, {required bool isMac}) =>
 void sendRemoteInputSource(RemoteKeySender send, {required bool isMac}) =>
     sendRemoteChord(send, key: isMac ? 'VK_SPACE' : 'VK_HANGUL', ctrl: isMac);
 
+/// A release-only recovery command; never synthesize a modifier press here.
+void sendRemoteModifierRelease(RemoteKeySender send) {
+  for (final key in const [
+    'VK_CONTROL',
+    'RControl',
+    'VK_MENU',
+    'RAlt',
+    'VK_SHIFT',
+    'RShift',
+    'Meta',
+    'RWin',
+  ]) {
+    send(key,
+        down: false,
+        press: false,
+        alt: false,
+        ctrl: false,
+        shift: false,
+        command: false);
+  }
+}
+
 /// Linux Legacy character input consumes the character itself, clearing Shift.
 /// The toolbar's Shift must therefore be reflected in ASCII text before send.
 String shiftedAscii(String text) {

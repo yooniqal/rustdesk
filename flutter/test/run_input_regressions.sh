@@ -6,7 +6,7 @@ flutter_bin="${1:-$(command -v flutter)}"
 test_dir="$(mktemp -d "${TMPDIR:-/tmp}/cuberemote-input.XXXXXX")"
 trap 'rm -rf "$test_dir"' EXIT
 mkdir -p "$test_dir/flutter/lib/models" "$test_dir/flutter/test" "$test_dir/src"
-for module in mobile_pointer_router remote_shortcuts input_modifier_utils; do
+for module in mobile_pointer_router remote_shortcuts input_modifier_utils raw_key_tracker; do
     cp "$flutter_dir/lib/models/$module.dart" "$test_dir/flutter/lib/models/"
     cp "$flutter_dir/test/${module}_test.dart" "$test_dir/flutter/test/"
 done
