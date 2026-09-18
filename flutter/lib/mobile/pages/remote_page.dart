@@ -23,6 +23,7 @@ import '../../common/widgets/overlay.dart';
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/remote_input.dart';
 import '../../models/input_model.dart';
+import '../../models/soft_keyboard_diff.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
 import '../../utils/image.dart';
@@ -340,72 +341,25 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
   }
 
-  // 한 번의 입력으로 지울 수 있는 글자 수 상한. diff 가 어긋났을 때 원격 문서가
-  // 백스페이스 수백 개로 날아가는 것을 막는다.
-  static const int _kMaxBackspaces = 32;
-
+  // 입력창 텍스트의 변화를 원격 편집(백스페이스 + 문자열)으로 바꿔 보낸다.
+  //
+  // 조합(composing) 중에도 바로 보낸다. 예전에는 조합 범위가 새 문자열보다 길면 전송을 미뤘는데,
+  // 삼성 키보드는 영문 단어도 통째로 조합 상태로 두기 때문에 스페이스를 눌러야 단어가
+  // 붙여넣기처럼 한꺼번에 들어갔다(2026-09-19 실제 증상). 한글 조합(ㄱ→가→각)은
+  // diff 가 "한 글자 지우고 다시 입력"으로 표현하므로 미루지 않아도 자모가 분리되지 않는다.
   void _handleComposingAwareInput(String newValue) {
-    var oldValue = _value;
+    final edit = diffSoftKeyboardText(_value, newValue);
     _value = newValue;
-    var i = newValue.length - 1;
-    for (; i >= 0 && newValue[i] != '1'; --i) {}
-    var j = oldValue.length - 1;
-    for (; j >= 0 && oldValue[j] != '1'; --j) {}
 
-    // oldValue 에 센티넬이 없다 = _value 가 입력창과 어긋난 상태.
-    // 이때 계산되는 diff 는 신뢰할 수 없고, 그대로 두면 센티넬 1024자가 통째로 전송된다.
-    // 아무것도 보내지 말고 기준점을 다시 맞춘다.
-    if (j < 0) {
-      _resetInputField();
-      return;
-    }
-
-    if (i < j) j = i;
-    var subNewValue = newValue.substring(j + 1);
-    var subOldValue = oldValue.substring(j + 1);
-
-    // get common prefix of subNewValue and subOldValue
-    var common = 0;
-    for (;
-        common < subOldValue.length &&
-            common < subNewValue.length &&
-            subNewValue[common] == subOldValue[common];
-        ++common) {}
-
-    // get newStr from subNewValue
-    var newStr = "";
-    if (subNewValue.length > common) {
-      newStr = subNewValue.substring(common);
-    }
-
-    // Set the value to the old value and early return if is still composing. (1 && 2)
-    // 1. The composing range is valid
-    // 2. The new string is shorter than the composing range.
-    if (_textController.value.isComposingRangeValid) {
-      final composingLength = _textController.value.composing.end -
-          _textController.value.composing.start;
-      if (composingLength > newStr.length) {
-        _value = oldValue;
-        return;
-      }
-    }
-
-    // Delete the different part in the old value.
-    final deleteCount = subOldValue.length - common;
-    if (deleteCount > _kMaxBackspaces) {
-      // 정상 입력에서는 나올 수 없는 수치 = diff 가 어긋났다. 원격을 망가뜨리느니 포기한다.
-      _resetInputField();
-      return;
-    }
-    for (i = 0; i < deleteCount; ++i) {
+    for (var i = 0; i < edit.backspaces; ++i) {
       inputModel.inputKey('VK_BACK');
     }
 
-    // Input the new string.
     // 한글처럼 조합이 끝난 한 글자도 문자열로 보낸다. inputKey 는 키 이름('VK_BACK')이나
     // ASCII 를 보내는 경로라 비ASCII 한 글자를 넘기면 엉뚱한 문자가 찍히거나 아무것도 안 들어간다.
     // (게다가 inputKey 는 툴바의 Ctrl/Alt 토글 상태를 같이 실어보내므로 토글이 켜져 있으면
     //  글자마다 Ctrl+글자가 나간다.)
+    final newStr = edit.inserted;
     if (newStr.isNotEmpty) {
       if (newStr.length > 1 || newStr.codeUnitAt(0) > 127) {
         bind.sessionInputString(sessionId: sessionId, value: newStr);
@@ -414,9 +368,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       }
     }
 
-    // 조합 중이 아니면 매번 기준점으로 되돌린다. 커서가 항상 끝에 있게 되고
-    // _value 와 입력창이 어긋날 여지가 사라진다.
-    if (!_textController.value.isComposingRangeValid) {
+    // 입력창은 평소엔 건드리지 않는다. 값을 되돌릴 때마다 IME 가 재시작되고, 그 틈에 친 글자가
+    // 옛 상태 기준으로 도착해 중복·누락이 생긴다. 어긋났을 때와, 센티넬이 닳았거나 입력창이
+    // 너무 길어졌을 때(조합 중이 아닐 때만) 기준점으로 되돌린다.
+    final composing = _textController.value.isComposingRangeValid;
+    if (edit.resync ||
+        (!composing &&
+            (newValue.length < initText.length ~/ 2 ||
+                newValue.length > initText.length * 2))) {
       _resetInputField();
     }
   }
