@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">RustDesk</string>
     <string name="accessibility_service_description">Allow other devices to control your phone using virtual touch, when RustDesk screen sharing is established</string>
+    <string name="key_capture_service_description">원격 화면을 보는 동안 물리 키보드의 Alt+Tab, Win 키 조합을 안드로이드 대신 원격 PC 로 보냅니다. 화면 내용은 읽지 않으며 원격 화면이 열려 있을 때만 동작합니다.</string>
 </resources>

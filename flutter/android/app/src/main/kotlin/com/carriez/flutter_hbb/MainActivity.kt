@@ -74,8 +74,24 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    // CubeRemote: 접근성 키 필터(KeyCaptureService)가 가로챈 키를 평소의 물리 키 경로(Flutter)로 넣는다.
+    fun deliverCapturedKey(event: KeyEvent) {
+        dispatchKeyEvent(event)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        KeyCapture.activityFocused = hasFocus
+    }
+
+    override fun onPause() {
+        KeyCapture.activityFocused = false
+        super.onPause()
+    }
+
     override fun onResume() {
         super.onResume()
+        KeyCapture.attach(this)
         val inputPer = InputService.isOpen
         activity.runOnUiThread {
             flutterMethodChannel?.invokeMethod(
@@ -170,6 +186,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         Log.e(logTag, "onDestroy")
+        KeyCapture.detach(this)
         mainService?.let {
             unbindService(serviceConnection)
         }
@@ -260,6 +277,19 @@ class MainActivity : FlutterActivity() {
                 "cr_stop_session_service" -> {
                     ViewerSessionService.stop(this)
                     result.success(true)
+                }
+                // CubeRemote: 원격 화면 동안 물리 키보드의 시스템 단축키를 앱이 받는다(KeyCapture.kt).
+                "cr_set_key_capture" -> {
+                    val on = call.argument<Boolean>("on") ?: false
+                    result.success(KeyCapture.setWanted(this, on))
+                }
+                "cr_open_key_capture_settings" -> {
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
                 }
                 "check_service" -> {
                     Companion.flutterMethodChannel?.invokeMethod(

@@ -18,6 +18,7 @@ import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
 import '../../common.dart';
+import '../../cuberemote_key_capture.dart';
 import '../../cuberemote_session_keepalive.dart';
 import '../../common/widgets/overlay.dart';
 import '../../common/widgets/dialog.dart';
@@ -130,6 +131,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     WakelockManager.enable(_uniqueKey);
     // 백그라운드로 나가도 세션이 끊기지 않도록 프로세스를 붙잡아 둔다(알림바에 "연결 중" 표시).
     CubeSessionKeepAlive.start(widget.id);
+    // 물리 키보드의 Alt+Tab·Win 조합이 안드로이드 앱 전환 대신 원격으로 가게 한다.
+    unawaited(CubeKeyCapture.setEnabled(true));
     _physicalFocusNode.requestFocus();
     gFFI.inputModel.listenToMouse(true);
     gFFI.qualityMonitorModel.checkShowQualityMonitor(sessionId);
@@ -179,6 +182,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     // 세션이 끝났으므로 프로세스를 붙잡아 둘 이유가 없다. sessionClose 와 같이 앞쪽에서
     // 처리해야 뒤쪽 await 들이 중단돼도 알림이 남지 않는다.
     unawaited(CubeSessionKeepAlive.stop());
+    unawaited(CubeKeyCapture.setEnabled(false));
     // https://github.com/flutter/flutter/issues/64935
     super.dispose();
     gFFI.dialogManager.hideMobileActionsOverlay(store: false);
@@ -1067,6 +1071,8 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         wrap(isLinux ? 'Super' : 'Win', () {
           inputModel.inputChord('Meta');
         }),
+      // 물리 키보드 Alt+Tab 을 원격으로 보내려면 접근성 키 필터를 한 번 켜야 한다(Android 16 QPR 미만).
+      if (isAndroid) wrap('물리 Alt+Tab 설정', CubeKeyCapture.openSettings),
       wrap(
           ' Fn ',
           () => setState(
