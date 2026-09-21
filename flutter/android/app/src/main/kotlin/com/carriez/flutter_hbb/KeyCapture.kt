@@ -37,12 +37,11 @@ object KeyCapture {
     fun attach(a: MainActivity) { activity = a }
     fun detach(a: MainActivity) { if (activity === a) { activity = null; activityFocused = false } }
 
-    fun setWanted(a: Activity, on: Boolean): Map<String, Any> {
+    fun setWanted(a: Activity, on: Boolean) {
         wanted = on
         val official = setOfficialCapture(a, on)
         val samsung = if (official) false else setSamsungMetaCapture(a, on)
         Log.i(TAG, "capture wanted=$on official=$official samsung=$samsung accessibility=${KeyCaptureService.isOpen}")
-        return mapOf("official" to official, "samsung" to samsung, "accessibility" to KeyCaptureService.isOpen)
     }
 
     private fun setOfficialCapture(a: Activity, on: Boolean): Boolean = try {
@@ -94,7 +93,9 @@ object KeyCapture {
         val a = activity
         val up = e.action == KeyEvent.ACTION_UP
         if (up && held.remove(e.keyCode)) {
-            a?.deliverCapturedKey(e)
+            // 화면이 사라졌으면 뗌을 삼키지 않는다(전달할 곳이 없는데 삼키면 흔적 없이 사라진다).
+            if (a == null) return false
+            a.deliverCapturedKey(e)
             return true
         }
         if (!wanted || !activityFocused || a == null) {

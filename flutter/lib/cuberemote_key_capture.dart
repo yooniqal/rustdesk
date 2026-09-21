@@ -6,11 +6,21 @@ import 'package:flutter/foundation.dart';
 import 'common.dart';
 
 class CubeKeyCapture {
+  // 원격 화면이 둘 이상 열릴 수 있으므로 마지막 하나가 닫힐 때만 끈다.
+  static int _active = 0;
+
   static Future<void> setEnabled(bool on) async {
     if (!isAndroid) return;
+    if (on) {
+      _active++;
+      if (_active > 1) return;
+    } else {
+      if (_active == 0) return;
+      _active--;
+      if (_active > 0) return;
+    }
     try {
-      final status = await gFFI.invokeMethod('cr_set_key_capture', {'on': on});
-      debugPrint('CubeKeyCapture($on): $status');
+      await gFFI.invokeMethod('cr_set_key_capture', {'on': on});
     } catch (e) {
       debugPrint('CubeKeyCapture.setEnabled failed: $e');
     }

@@ -281,7 +281,9 @@ class MainActivity : FlutterActivity() {
                 // CubeRemote: 원격 화면 동안 물리 키보드의 시스템 단축키를 앱이 받는다(KeyCapture.kt).
                 "cr_set_key_capture" -> {
                     val on = call.argument<Boolean>("on") ?: false
-                    result.success(KeyCapture.setWanted(this, on))
+                    // FFI.invokeMethod 가 Future<bool> 이라 상태는 logcat(CubeKeys)에만 남긴다.
+                    KeyCapture.setWanted(this, on)
+                    result.success(true)
                 }
                 "cr_open_key_capture_settings" -> {
                     try {
