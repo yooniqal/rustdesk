@@ -36,4 +36,34 @@ class CubeKeyCapture {
       debugPrint('CubeKeyCapture.openSettings failed: $e');
     }
   }
+
+  // 물리 F키 자리(Fn 없이 미디어 키)를 F1~F12 로 보내는 학습 매핑. 네이티브 FnKeyMap.kt.
+  static Future<void> learnFnKeys() async {
+    if (!isAndroid) return;
+    try {
+      await gFFI.invokeMethod('cr_learn_fn_keys');
+    } catch (e) {
+      debugPrint('CubeKeyCapture.learnFnKeys failed: $e');
+    }
+  }
+
+  static Future<bool> fnKeysEnabled() async {
+    if (!isAndroid) return false;
+    try {
+      return await gFFI.invokeMethod('cr_get_fn_keys') == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // false 를 돌려주면 아직 학습된 매핑이 없다.
+  static Future<bool> setFnKeys(bool on) async {
+    if (!isAndroid) return false;
+    try {
+      return await gFFI.invokeMethod('cr_set_fn_keys', {'on': on}) == true;
+    } catch (e) {
+      debugPrint('CubeKeyCapture.setFnKeys failed: $e');
+      return false;
+    }
+  }
 }

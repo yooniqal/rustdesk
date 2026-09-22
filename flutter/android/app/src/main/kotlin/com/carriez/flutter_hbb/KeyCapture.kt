@@ -102,7 +102,12 @@ object KeyCapture {
             if (held.isNotEmpty() && (!wanted || !activityFocused)) held.clear()
             return false
         }
-        if (e.action != KeyEvent.ACTION_DOWN || !isSystemShortcut(e)) return false
+        // F키 학습 중이면 (미디어 키까지 포함해) 눌린 키를 전부 여기서 받는다.
+        if (FnKeyMap.isLearning) {
+            if (FnKeyMap.onLearnKey(a, e)) return true
+        }
+        if (e.action != KeyEvent.ACTION_DOWN) return false
+        if (!isSystemShortcut(e) && !FnKeyMap.mapsKey(e.keyCode)) return false
         held.add(e.keyCode)
         a.deliverCapturedKey(e)
         return true

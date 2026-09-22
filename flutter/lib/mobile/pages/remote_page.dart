@@ -133,6 +133,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     CubeSessionKeepAlive.start(widget.id);
     // 물리 키보드의 Alt+Tab·Win 조합이 안드로이드 앱 전환 대신 원격으로 가게 한다.
     unawaited(CubeKeyCapture.setEnabled(true));
+    _barHidden = bind.mainGetLocalOption(key: _kOptionHideBar) == 'Y';
+    if (_barHidden) _showBar = false;
+    CubeKeyCapture.fnKeysEnabled().then((v) {
+      if (mounted && v != _physFn) setState(() => _physFn = v);
+    });
     _physicalFocusNode.requestFocus();
     gFFI.inputModel.listenToMouse(true);
     gFFI.qualityMonitorModel.checkShowQualityMonitor(sessionId);
@@ -469,7 +474,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final keyboardIsVisible =
         keyboardVisibilityController.isVisible && _showEdit;
-    final showActionButton = !_showBar || keyboardIsVisible || _showGestureHelp || _showKeyTools;
+    final showActionButton = keyboardIsVisible ||
+        _showGestureHelp ||
+        _showKeyTools ||
+        (!_showBar && !_barHidden);
 
     return WillPopScope(
       onWillPop: () async {
@@ -679,14 +687,28 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       },
                     ),
                   ]))),
-          Obx(() => IconButton(
-                color: Colors.white,
-                icon: Icon(Icons.expand_more),
-                onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
+          Obx(() => GestureDetector(
+                // 길게 누르면 완전 숨김(둥근 버튼도 없음). 아래 가운데 손잡이로 되돌린다.
+                onLongPress: gFFI.ffiModel.waitForFirstImage.isTrue
                     ? null
                     : () {
-                        setState(() => _showBar = !_showBar);
+                        setState(() {
+                          _barHidden = true;
+                          _showBar = false;
+                        });
+                        bind.mainSetLocalOption(key: _kOptionHideBar, value: 'Y');
+                        showToast('하단바를 숨겼습니다. 화면 아래 가운데 손잡이를 누르면 다시 나옵니다');
                       },
+                child: IconButton(
+                  color: Colors.white,
+                  icon: Icon(Icons.expand_more),
+                  tooltip: '접기 (길게: 완전 숨김)',
+                  onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
+                      ? null
+                      : () {
+                          setState(() => _showBar = !_showBar);
+                        },
+                ),
               )),
         ],
       ),
@@ -713,6 +735,35 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             KeyHelpTools(
                 keyboardIsVisible: keyboardIsVisible,
                 showGestureHelp: _showKeyTools),
+            if (_barHidden && !_showBar && !keyboardIsVisible && !_showKeyTools)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      setState(() {
+                        _barHidden = false;
+                        _showBar = true;
+                      });
+                      bind.mainSetLocalOption(key: _kOptionHideBar, value: '');
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 4, left: 24, right: 24, top: 10),
+                      child: Container(
+                        width: 56,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.35),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             SizedBox(
               width: 0,
               height: 0,
@@ -979,6 +1030,12 @@ class KeyHelpTools extends StatefulWidget {
 class _KeyHelpToolsState extends State<KeyHelpTools> {
   var _more = false;
   var _fn = false;
+  // 하단바 완전 숨김: 떠 있는 둥근 버튼까지 없앤다. 화면 아래 가운데의 작은 손잡이로만 되돌린다.
+  // (기기별 로컬 옵션으로 저장 — 사용자가 한 번 숨기면 다음 세션도 숨긴 채 시작)
+  static const _kOptionHideBar = 'cr-hide-bar';
+  bool _barHidden = false;
+  // 물리 F키 자리를 Fn 없이 F키로 보내는 매핑이 켜져 있는가(네이티브에 저장, 표시용).
+  var _physFn = false;
   var _pin = false;
   final _keyboardVisibilityController = KeyboardVisibilityController();
   final _key = GlobalKey();
@@ -1073,6 +1130,21 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         }),
       // 물리 키보드 Alt+Tab 을 원격으로 보내려면 접근성 키 필터를 한 번 켜야 한다(Android 16 QPR 미만).
       if (isAndroid) wrap('물리 Alt+Tab 설정', CubeKeyCapture.openSettings),
+      // 북커버 키보드: F키 자리가 미디어 키로 오므로 한 번 학습해 두면 Fn 없이 F키가 원격으로 간다.
+      if (isAndroid)
+        wrap('물리 F키 학습', () {
+          CubeKeyCapture.learnFnKeys();
+          setState(() => _physFn = true);
+        }),
+      if (isAndroid)
+        wrap('Fn없이 F키', () async {
+          final ok = await CubeKeyCapture.setFnKeys(!_physFn);
+          if (!ok && !_physFn) {
+            showToast("먼저 '물리 F키 학습' 을 하세요");
+            return;
+          }
+          setState(() => _physFn = ok && !_physFn);
+        }, active: _physFn),
       wrap(
           ' Fn ',
           () => setState(

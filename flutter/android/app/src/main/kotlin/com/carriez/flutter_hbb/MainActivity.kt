@@ -92,6 +92,7 @@ class MainActivity : FlutterActivity() {
     override fun onResume() {
         super.onResume()
         KeyCapture.attach(this)
+        FnKeyMap.load(this)
         val inputPer = InputService.isOpen
         activity.runOnUiThread {
             flutterMethodChannel?.invokeMethod(
@@ -104,7 +105,11 @@ class MainActivity : FlutterActivity() {
     // CubeRemote: 물리 키보드의 시스템 조합(Alt+Tab 등)을 앱이 먼저 소비해 원격 PC로만 전달되게 한다.
     // super.dispatchKeyEvent 로 Flutter(원격 전송 경로)에 먼저 넘긴 뒤, 안드로이드가 앱 전환 등에 쓰는
     // 조합키는 소비(true)하여 안드로이드 기본동작을 막는다. (Ctrl/Shift 단독 조합은 그대로 통과.)
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    override fun dispatchKeyEvent(rawEvent: KeyEvent): Boolean {
+        // CubeRemote: F키 학습(FnKeyMap) — 접근성 필터가 없어도 앱까지 오는 키는 여기서 배운다.
+        if (FnKeyMap.isLearning && KeyCapture.wanted && FnKeyMap.onLearnKey(this, rawEvent)) return true
+        // 학습된 미디어 키 → F키. (접근성 필터가 넘긴 것도 여기로 오므로 변환은 한 곳에서만 한다.)
+        val event = if (KeyCapture.wanted && FnKeyMap.mapsKey(rawEvent.keyCode)) FnKeyMap.translate(rawEvent) else rawEvent
         val handled = super.dispatchKeyEvent(event)
         val meta = event.metaState
         val hasAlt = (meta and KeyEvent.META_ALT_ON) != 0
@@ -284,6 +289,16 @@ class MainActivity : FlutterActivity() {
                     // FFI.invokeMethod 가 Future<bool> 이라 상태는 logcat(CubeKeys)에만 남긴다.
                     KeyCapture.setWanted(this, on)
                     result.success(true)
+                }
+                "cr_learn_fn_keys" -> {
+                    FnKeyMap.startLearning(this)
+                    result.success(true)
+                }
+                "cr_set_fn_keys" -> {
+                    result.success(FnKeyMap.setEnabled(this, call.argument<Boolean>("on") ?: false))
+                }
+                "cr_get_fn_keys" -> {
+                    result.success(FnKeyMap.enabled)
                 }
                 "cr_open_key_capture_settings" -> {
                     try {
