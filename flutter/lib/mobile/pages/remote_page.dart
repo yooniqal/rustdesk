@@ -67,6 +67,10 @@ class RemotePage extends StatefulWidget {
 class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Timer? _timer;
   bool _showBar = !isWebDesktop;
+  // 하단바 완전 숨김: 떠 있는 둥근 버튼까지 없앤다. 화면 아래 가운데의 작은 손잡이로만 되돌린다.
+  // (기기별 로컬 옵션으로 저장 — 사용자가 한 번 숨기면 다음 세션도 숨긴 채 시작)
+  static const _kOptionHideBar = 'cr-hide-bar';
+  bool _barHidden = false;
   bool _showGestureHelp = false;
   bool _showKeyTools = false;
   String _value = initText;   // 입력창(_textController)도 initText 로 시작한다 — 같은 값이어야 diff 가 성립
@@ -135,9 +139,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     unawaited(CubeKeyCapture.setEnabled(true));
     _barHidden = bind.mainGetLocalOption(key: _kOptionHideBar) == 'Y';
     if (_barHidden) _showBar = false;
-    CubeKeyCapture.fnKeysEnabled().then((v) {
-      if (mounted && v != _physFn) setState(() => _physFn = v);
-    });
     _physicalFocusNode.requestFocus();
     gFFI.inputModel.listenToMouse(true);
     gFFI.qualityMonitorModel.checkShowQualityMonitor(sessionId);
@@ -1030,12 +1031,16 @@ class KeyHelpTools extends StatefulWidget {
 class _KeyHelpToolsState extends State<KeyHelpTools> {
   var _more = false;
   var _fn = false;
-  // 하단바 완전 숨김: 떠 있는 둥근 버튼까지 없앤다. 화면 아래 가운데의 작은 손잡이로만 되돌린다.
-  // (기기별 로컬 옵션으로 저장 — 사용자가 한 번 숨기면 다음 세션도 숨긴 채 시작)
-  static const _kOptionHideBar = 'cr-hide-bar';
-  bool _barHidden = false;
   // 물리 F키 자리를 Fn 없이 F키로 보내는 매핑이 켜져 있는가(네이티브에 저장, 표시용).
   var _physFn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    CubeKeyCapture.fnKeysEnabled().then((v) {
+      if (mounted && v != _physFn) setState(() => _physFn = v);
+    });
+  }
   var _pin = false;
   final _keyboardVisibilityController = KeyboardVisibilityController();
   final _key = GlobalKey();
@@ -1139,6 +1144,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       if (isAndroid)
         wrap('Fn없이 F키', () async {
           final ok = await CubeKeyCapture.setFnKeys(!_physFn);
+          if (!mounted) return;
           if (!ok && !_physFn) {
             showToast("먼저 '물리 F키 학습' 을 하세요");
             return;
