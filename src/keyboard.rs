@@ -957,6 +957,11 @@ pub fn event_to_key_events(
         _ => {}
     }
 
+    #[cfg(target_os = "windows")]
+    if let Some(events) = korean_ime_toggle_for_unix_peer(&peer, event) {
+        return events;
+    }
+
     let mut key_event = KeyEvent::new();
     key_event.mode = keyboard_mode.into();
 
@@ -988,6 +993,48 @@ pub fn event_to_key_events(
         }
     }
     key_events
+}
+
+// CubeRemote: 윈도우 뷰어 → 리눅스/맥 호스트의 한/영(한자) 키.
+//
+// 맵 모드는 윈도우 스캔코드를 상대 OS 키코드로 바꿔 보내는데, 전용 한/영 키(스캔코드 0xF2, 한자 0xF1 쪽)는
+// rdev 변환표에 없어 `Key::Unknown` → 변환 실패 → **키가 통째로 버려졌다**(윈도우 상대는 스캔코드를 그대로
+// 보내서 문제없음). 오른쪽 Alt 를 한/영으로 쓰는 배열(VK 는 같은 0x15)은 AltGr 로 가서 맥에선 Option 이 됐다.
+// VK 로 가려내 상대 OS 의 입력기 전환 동작으로 바꿔 보낸다. 모바일 앱의 한/영 버튼과 같은 약속:
+//   리눅스 = Hangul 키(ibus/fcitx 의 기본 전환키), 맥 = Ctrl+Space(이전 입력 소스 선택).
+// press=true 한 번이면 호스트가 누름·뗌을 모두 만든다. 뗌 이벤트는 삼킨다.
+#[cfg(target_os = "windows")]
+fn korean_ime_toggle_for_unix_peer(peer: &str, event: &Event) -> Option<Vec<KeyEvent>> {
+    const VK_HANGUL: u32 = 0x15;
+    const VK_HANJA: u32 = 0x19;
+    if peer != OS_LOWER_LINUX && peer != OS_LOWER_MACOS {
+        return None;
+    }
+    let vk = event.platform_code as u32;
+    if vk != VK_HANGUL && vk != VK_HANJA {
+        return None;
+    }
+    if !matches!(event.event_type, EventType::KeyPress(..)) {
+        return Some(Vec::new());
+    }
+    let mut key_event = KeyEvent::new();
+    key_event.mode = KeyboardMode::Legacy.into();
+    key_event.down = true;
+    key_event.press = true;
+    if peer == OS_LOWER_LINUX {
+        key_event.set_control_key(if vk == VK_HANGUL {
+            ControlKey::Hangul
+        } else {
+            ControlKey::Hanja
+        });
+    } else {
+        if vk == VK_HANJA {
+            return Some(Vec::new());
+        }
+        key_event.set_control_key(ControlKey::Space);
+        key_event.modifiers.push(ControlKey::Control.into());
+    }
+    Some(vec![key_event])
 }
 
 pub fn send_key_event(key_event: &KeyEvent) {
