@@ -71,6 +71,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   // (기기별 로컬 옵션으로 저장 — 사용자가 한 번 숨기면 다음 세션도 숨긴 채 시작)
   static const _kOptionHideBar = 'cr-hide-bar';
   bool _barHidden = false;
+  // 하단바 자동 숨김(2026-10-24 요청). 바를 건드리지 않고 이 시간이 지나면 접힌다.
+  // 접힌 뒤(접기·자동 숨김·완전 숨김 모두)에는 화면 아래 가운데 손잡이로 되돌린다 —
+  // 85 까지는 접기=오른쪽 아래 mini FAB, 완전 숨김=반투명 흰 줄이었는데 둘 다 원격 화면 위에
+  // 묻혀 "다시 올리는 게 안 보인다"는 보고. 손잡이 하나로 통일하고 흰 테두리·그림자를 준다.
+  static const _kBarAutoHide = Duration(seconds: 5);
+  Timer? _barAutoHideTimer;
   bool _showGestureHelp = false;
   bool _showKeyTools = false;
   String _value = initText;   // 입력창(_textController)도 initText 로 시작한다 — 같은 값이어야 diff 가 성립
@@ -139,6 +145,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     unawaited(CubeKeyCapture.setEnabled(true));
     _barHidden = bind.mainGetLocalOption(key: _kOptionHideBar) == 'Y';
     if (_barHidden) _showBar = false;
+    if (_showBar) _armBarAutoHide();
     _physicalFocusNode.requestFocus();
     gFFI.inputModel.listenToMouse(true);
     gFFI.qualityMonitorModel.checkShowQualityMonitor(sessionId);
@@ -205,6 +212,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _timer?.cancel();
     _timerDidChangeMetrics?.cancel();
     _iosKeyboardWorkaroundTimer?.cancel();
+    _barAutoHideTimer?.cancel();
     gFFI.dialogManager.dismissAll();
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
         overlays: SystemUiOverlay.values);
@@ -463,6 +471,79 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     });
   }
 
+  void _setShowBar(bool show) {
+    if (!mounted) return;
+    setState(() => _showBar = show);
+    if (show) {
+      _armBarAutoHide();
+    } else {
+      _barAutoHideTimer?.cancel();
+      _barAutoHideTimer = null;
+    }
+  }
+
+  // 바가 보이는 동안 조작이 있을 때마다 다시 센다. 첫 화면이 아직 안 왔거나
+  // 제스처 도움말/조합키 패널이 열려 있으면 숨기지 않고 한 번 더 기다린다.
+  void _armBarAutoHide() {
+    _barAutoHideTimer?.cancel();
+    _barAutoHideTimer = Timer(_kBarAutoHide, () {
+      _barAutoHideTimer = null;
+      if (!mounted || _closing || !_showBar) return;
+      if (gFFI.ffiModel.waitForFirstImage.isTrue ||
+          _showGestureHelp ||
+          _showKeyTools) {
+        _armBarAutoHide();
+        return;
+      }
+      _setShowBar(false);
+    });
+  }
+
+  // 접힌 하단바를 다시 올리는 손잡이. 원격 화면 위에 떠 있으므로 어떤 배경에서도 보이도록
+  // 흰 테두리 + 그림자를 준다. 탭 또는 위로 쓸어올리면 바가 나온다. 완전 숨김 옵션도 함께 푼다.
+  Widget _barHandle() => Positioned(
+        left: 0,
+        right: 0,
+        bottom: 0,
+        child: SafeArea(
+          top: false,
+          child: Center(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _revealBar,
+              onVerticalDragUpdate: (d) {
+                if (d.delta.dy < -2) _revealBar();
+              },
+              child: Container(
+                width: 140,
+                height: 32,
+                alignment: Alignment.center,
+                child: Container(
+                  width: 72,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: MyTheme.accent,
+                    borderRadius: BorderRadius.circular(5),
+                    border: Border.all(color: Colors.white, width: 1.5),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black54, blurRadius: 4)
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+  void _revealBar() {
+    if (_barHidden) {
+      _barHidden = false;
+      bind.mainSetLocalOption(key: _kOptionHideBar, value: '');
+    }
+    _setShowBar(true);
+  }
+
   Widget _bottomWidget() => _closing
       ? Offstage()
       : _showGestureHelp
@@ -475,10 +556,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final keyboardIsVisible =
         keyboardVisibilityController.isVisible && _showEdit;
-    final showActionButton = keyboardIsVisible ||
-        _showGestureHelp ||
-        _showKeyTools ||
-        (!_showBar && !_barHidden);
+    // 접힌 바를 올리는 역할은 _barHandle 이 맡는다. FAB 은 키보드 내리기/패널 닫기에만 쓴다.
+    final showActionButton =
+        keyboardIsVisible || _showGestureHelp || _showKeyTools;
+    final showBarHandle = !_closing &&
+        !_showBar &&
+        !keyboardIsVisible &&
+        !_showGestureHelp &&
+        !_showKeyTools;
 
     return WillPopScope(
       onWillPop: () async {
@@ -511,10 +596,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         _physicalFocusNode.requestFocus();
                       } else if (_showKeyTools) {
                         _showKeyTools = false;
+                        _armBarAutoHide();
                       } else if (_showGestureHelp) {
                         _showGestureHelp = false;
-                      } else {
-                        _showBar = !_showBar;
+                        _armBarAutoHide();
                       }
                     });
                   }),
@@ -534,7 +619,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       : Offstage(),
                 ],
               )),
-          body: Obx(
+          body: Stack(children: [
+            Obx(
             () => getRawPointerAndKeyBody(Overlay(
               initialEntries: [
                 OverlayEntry(builder: (context) {
@@ -566,7 +652,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 })
               ],
             )),
-          )),
+            ),
+            if (showBarHandle) _barHandle(),
+          ])),
     );
   }
 
@@ -591,6 +679,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     return BottomAppBar(
       elevation: 10,
       color: MyTheme.accent,
+      // 바 위에서 손이 닿을 때마다 자동 숨김 타이머를 다시 센다.
+      child: Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => _armBarAutoHide(),
       child: Row(
         mainAxisSize: MainAxisSize.max,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -693,10 +785,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 onLongPress: gFFI.ffiModel.waitForFirstImage.isTrue
                     ? null
                     : () {
-                        setState(() {
-                          _barHidden = true;
-                          _showBar = false;
-                        });
+                        setState(() => _barHidden = true);
+                        _setShowBar(false);
                         bind.mainSetLocalOption(key: _kOptionHideBar, value: 'Y');
                         showToast('하단바를 숨겼습니다. 화면 아래 가운데 손잡이를 누르면 다시 나옵니다');
                       },
@@ -706,12 +796,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   tooltip: '접기 (길게: 완전 숨김)',
                   onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
                       ? null
-                      : () {
-                          setState(() => _showBar = !_showBar);
-                        },
+                      : () => _setShowBar(false),
                 ),
               )),
         ],
+      ),
       ),
     );
   }
@@ -736,35 +825,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             KeyHelpTools(
                 keyboardIsVisible: keyboardIsVisible,
                 showGestureHelp: _showKeyTools),
-            if (_barHidden && !_showBar && !keyboardIsVisible && !_showKeyTools)
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      setState(() {
-                        _barHidden = false;
-                        _showBar = true;
-                      });
-                      bind.mainSetLocalOption(key: _kOptionHideBar, value: '');
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 4, left: 24, right: 24, top: 10),
-                      child: Container(
-                        width: 56,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.35),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
             SizedBox(
               width: 0,
               height: 0,

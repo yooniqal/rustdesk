@@ -136,11 +136,23 @@ class _RawTouchGestureDetectorRegionState
   late final _holdDrag = RemoteDragController(_sendLeftButton);
   late final _longPressDrag = RemoteDragController(_sendLeftButton);
 
+  // CubeRemote: 마우스 모드 롱프레스 드래그(2026-10-24 "드래그&드롭이 안 된다" 보고).
+  // 기존 경로(두 번 탭하고 이동, _holdDrag)는 타이밍이 까다로워 현장에서 거의 성공하지 못했다.
+  // 길게 누른 뒤(진동) 손가락을 움직이면 왼쪽 버튼을 누른 채 끌고, 움직이지 않고 떼면 기존대로
+  // 오른쪽 클릭. 오른쪽 클릭이 누른 순간이 아니라 뗀 순간에 나가는 것이 유일한 차이.
+  bool _mouseModeLongPressing = false;
+  bool _mouseModeLongDragging = false;
+  Offset _mouseModeLongPressLastPos = Offset.zero;
+  bool get _isMobileMouseMode =>
+      isMobile && !ffiModel.touchMode && !ffiModel.isPeerMobile;
+
   Future<void> _sendLeftButton(bool down) => down
       ? inputModel.sendMouse('down', MouseButtons.left)
       : inputModel.releaseMouseButton(MouseButtons.left);
 
   void _cancelDrags() {
+    _mouseModeLongPressing = false;
+    _mouseModeLongDragging = false;
     _panDrag.end();
     _holdDrag.end();
     _longPressDrag.end();
@@ -302,7 +314,21 @@ class _RawTouchGestureDetectorRegionState
     if (isNotTouchBasedDevice()) {
       return;
     }
+    final wasPressing = _mouseModeLongPressing;
+    final wasDragging = _mouseModeLongDragging;
+    _mouseModeLongPressing = false;
+    _mouseModeLongDragging = false;
     await _longPressDrag.end();
+    if (wasPressing && !wasDragging && !shouldBlockMouseModeEvent()) {
+      await inputModel.tap(MouseButtons.right);
+    }
+  }
+
+  // 롱프레스가 중간에 취소되면 onLongPressUp 이 오지 않는다. 드래그 중이었다면 버튼을 놓아준다.
+  onLongPressCancel() {
+    _mouseModeLongPressing = false;
+    _mouseModeLongDragging = false;
+    _longPressDrag.end();
   }
 
   // for mobiles
@@ -321,6 +347,15 @@ class _RawTouchGestureDetectorRegionState
         if (shouldBlockMouseModeEvent()) {
           return;
         }
+        if (_isMobileMouseMode) {
+          // 오른쪽 클릭은 onLongPressUp 에서(움직이지 않고 뗐을 때만). 여기서는 드래그 대기만.
+          _mouseModeLongPressing = true;
+          _mouseModeLongDragging = false;
+          _mouseModeLongPressLastPos =
+              _lastTapDownPositionForMouseMode ?? Offset.zero;
+          HapticFeedback.lightImpact();
+          return;
+        }
       }
       await inputModel.tap(MouseButtons.right);
     } else {
@@ -331,7 +366,24 @@ class _RawTouchGestureDetectorRegionState
   }
 
   onLongPressMoveUpdate(LongPressMoveUpdateDetails d) async {
-    if (!ffiModel.isPeerMobile || isNotTouchBasedDevice()) {
+    if (isNotTouchBasedDevice()) {
+      return;
+    }
+    if (_mouseModeLongPressing) {
+      if (!_mouseModeLongDragging) {
+        // 손떨림으로 드래그가 시작되지 않게 터치 슬롭을 넘어야 버튼을 누른다.
+        if (d.localOffsetFromOrigin.distance < kTouchSlop) return;
+        _mouseModeLongDragging = true;
+        _mouseModeLongPressLastPos = d.localPosition;
+        await _longPressDrag.begin();
+        return;
+      }
+      final delta = d.localPosition - _mouseModeLongPressLastPos;
+      _mouseModeLongPressLastPos = d.localPosition;
+      await ffi.cursorModel.updatePan(delta, d.localPosition, handleTouch);
+      return;
+    }
+    if (!ffiModel.isPeerMobile) {
       return;
     }
     if (handleTouch) {
@@ -576,7 +628,7 @@ class _RawTouchGestureDetectorRegionState
         instance
           ..onLongPressDown = onLongPressDown
           ..onLongPressUp = onLongPressUp
-          ..onLongPressCancel = _longPressDrag.end
+          ..onLongPressCancel = onLongPressCancel
           ..onLongPress = onLongPress
           ..onLongPressMoveUpdate = onLongPressMoveUpdate;
       }),

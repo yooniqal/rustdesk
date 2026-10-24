@@ -254,6 +254,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Right Mouse", "오른쪽 마우스"),
         ("One-Finger Move", "한 손가락으로 이동"),
         ("Double Tap & Move", "두 번 탭하고 이동"),
+        ("Long Press & Move", "길게 누른 뒤 이동"),
         ("Mouse Drag", "마우스 끌기"),
         ("Three-Finger vertically", "세 손가락으로 수직"),
         ("Mouse Wheel", "마우스 휠"),
