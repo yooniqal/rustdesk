@@ -14,6 +14,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- targetSdk 34+ 로 올릴 때 ViewerSessionService(dataSync) 에 필요. 33 에서는 무시된다. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- targetSdk 34: MainService(호스트 모드) 는 specialUse|mediaProjection (MainService.kt 참고) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -105,10 +108,16 @@
             android:excludeFromRecents="true"
             android:theme="@style/Transparent" />
 
+        <!-- 호스트(내 화면 공유) 서비스. 34 부터는 화면 캡처 동의 전에 mediaProjection 타입으로 뜰 수
+             없어 평소에는 specialUse 로 뜨고, 동의 결과가 있을 때만 mediaProjection 을 더한다(MainService.kt). -->
         <service
             android:name=".MainService"
             android:enabled="true"
-            android:foregroundServiceType="mediaProjection" />
+            android:foregroundServiceType="specialUse|mediaProjection">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="@string/foreground_service_special_use_subtype" />
+        </service>
 
         <service
             android:name=".FloatingWindowService"

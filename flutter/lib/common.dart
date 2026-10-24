@@ -38,7 +38,7 @@ import 'desktop/pages/remote_page.dart' as desktop_remote;
 import 'desktop/pages/file_manager_page.dart' as desktop_file_manager;
 import 'desktop/pages/view_camera_page.dart' as desktop_view_camera;
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
-import 'cuberemote_config.dart';
+import 'cuberemote_api.dart';
 import 'models/model.dart';
 import 'models/platform_model.dart';
 
@@ -2589,13 +2589,22 @@ connect(BuildContext context, String id,
     String? connToken,
     bool? isSharedPassword}) async {
   if (id == '') return;
-  // CubeRemote: 가맹점 PC 는 전부 같은 접속 비밀번호를 쓴다(2026-09-16 확인: 등록된 61대 전부 동일).
-  // 가맹점 탭 카드는 비번을 넘기지만 ID 직접 입력·최근 목록·딥링크로 들어오면 안 넘어와서
-  // 접속할 때마다 비밀번호를 물었다. 안 넘어온 경우에만 공통 비번을 채운다.
-  // (이미 넘어온 값이 있으면 건드리지 않는다 — 나중에 기기별 비번을 쓰게 되어도 그대로 동작한다.)
-  if ((password == null || password.isEmpty) &&
-      CubeRemoteConfig.fixedPassword.isNotEmpty) {
-    password = CubeRemoteConfig.fixedPassword;
+  // CubeRemote: 비밀번호가 안 넘어온 경우(ID 직접 입력·최근 목록·딥링크) 운영자 로그인이 돼 있으면
+  // 콘솔에서 그 기기의 접속 비밀번호를 받아 채운다. 콘솔에 없는 기기면 RustDesk 가 평소처럼 묻는다.
+  // (예전처럼 앱에 내장된 공통 비밀번호는 없다 — cuberemote_api.dart)
+  if (password == null || password.isEmpty) {
+    // 가맹점 탭이 없는 화면(윈도우·맥 뷰어)에서는 여기서 한 번 로그인시킨다. 건너뛰면 평소대로 묻는다.
+    if (!CubeViewerApi.loggedIn && context.mounted) {
+      await cubePromptLogin(context);
+    }
+  }
+  if ((password == null || password.isEmpty) && CubeViewerApi.loggedIn) {
+    try {
+      final pw = await CubeViewerApi.credential(id.replaceAll(' ', ''));
+      if (pw.isNotEmpty) password = pw;
+    } catch (e) {
+      debugPrint('CubeRemote credential lookup failed: $e');
+    }
   }
   if (!isDesktop || desktopType == DesktopType.main) {
     try {

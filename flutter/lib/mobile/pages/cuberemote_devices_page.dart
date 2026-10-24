@@ -1,18 +1,19 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../common.dart';
+import '../../cuberemote_api.dart';
 import '../../cuberemote_config.dart';
 import '../../models/cube_device_directory.dart';
 import 'home_page.dart';
 
-// CubeRemote 가맹점 목록 탭. 콘솔의 읽기전용 뷰어 API에서 목록을 받아
-// 웹 콘솔과 동일한 순서(sortOrder)·지역 그룹으로 표시하고, 탭하면 공통 비번으로 접속한다.
+// CubeRemote 가맹점 목록 탭. 운영자가 접속코드로 로그인하면 콘솔 뷰어 API에서 목록을 받아
+// 웹 콘솔과 동일한 순서(sortOrder)·지역 그룹으로 표시하고, [연결]을 누르면 그 기기의
+// 접속 비밀번호를 콘솔에서 받아 접속한다(앱에 비밀번호 내장 없음 — cuberemote_api.dart).
 // 편집/그룹/순서 변경은 웹 콘솔에서 하며, 상단 버튼으로 바로 열 수 있다.
+// 시작할 때 콘솔의 배포본 versionCode 와 비교해 새 버전 배너를 띄운다.
 class CubeDevicesPage extends StatefulWidget implements PageShape {
   CubeDevicesPage({Key? key}) : super(key: key);
 
@@ -35,8 +36,20 @@ class _CubeDevicesPageState extends State<CubeDevicesPage>
   List<CubeDevice> get _devices => _directory.devices;
   bool get _loading => _directory.loading;
   String? get _error => _directory.error;
-  http.Client? _client;
   bool _foreground = true;
+
+  // 로그인 폼
+  bool _loggedIn = CubeViewerApi.loggedIn;
+  final _codeController = TextEditingController();
+  bool _loggingIn = false;
+  String? _loginError;
+
+  // 새 버전 배너: 콘솔 배포본이 내 versionCode 보다 높을 때만
+  String? _newVersionLabel;
+  bool _dismissedUpdate = false;
+
+  // 비밀번호를 받는 동안 같은 카드를 두 번 누르지 않게
+  String? _connecting;
   String _filter = 'all';
   String _query = '';
   final Set<String> _collapsed = {}; // 접힌 지역명
@@ -47,9 +60,12 @@ class _CubeDevicesPageState extends State<CubeDevicesPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _directory.addListener(_changed);
-    _load();
+    if (_loggedIn) {
+      _load();
+      _checkVersion();
+    }
     _timer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (_foreground && ModalRoute.of(context)?.isCurrent != false) _load();
+      if (_loggedIn && _foreground && ModalRoute.of(context)?.isCurrent != false) _load();
     });
   }
 
@@ -58,7 +74,7 @@ class _CubeDevicesPageState extends State<CubeDevicesPage>
     _timer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _directory.dispose();
-    _client?.close();
+    _codeController.dispose();
     super.dispose();
   }
 
@@ -69,44 +85,173 @@ class _CubeDevicesPageState extends State<CubeDevicesPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
-    if (_foreground && ModalRoute.of(context)?.isCurrent != false) _load();
+    if (_loggedIn && _foreground && ModalRoute.of(context)?.isCurrent != false) _load();
   }
 
   Future<void> _load() => _directory.refresh();
 
   Future<List<CubeDevice>> _fetch() async {
-    final client = http.Client();
-    _client = client;
     try {
-      final uri =
-          Uri.parse('${CubeRemoteConfig.consoleUrl}/api/viewer/devices');
-      final res = await client.get(uri, headers: {
-        'X-Viewer-Token': CubeRemoteConfig.viewerToken,
-      }).timeout(const Duration(seconds: 12));
-      if (res.statusCode == 401 || res.statusCode == 403) {
-        throw const CubeDirectoryError('가맹점 목록 접근 설정을 확인해 주세요.');
-      }
-      if (res.statusCode == 429) {
-        throw const CubeDirectoryError('조회 요청이 많습니다. 잠시 후 다시 갱신합니다.');
-      }
-      if (res.statusCode != 200) {
-        throw CubeDirectoryError('서버 응답 오류 (${res.statusCode}). 다시 시도해 주세요.');
-      }
-      return decodeCubeDevices(utf8.decode(res.bodyBytes));
-    } finally {
-      client.close();
-      if (identical(_client, client)) _client = null;
+      final list = await CubeViewerApi.devices();
+      return list.map((row) {
+        if (row is! Map || (row['deviceId'] ?? '').toString().trim().isEmpty) {
+          throw const FormatException('기기 정보 형식이 올바르지 않습니다');
+        }
+        return CubeDevice(Map<String, dynamic>.from(row));
+      }).toList(growable: false);
+    } on CubeAuthException catch (e) {
+      // 콘솔에서 토큰을 끊었거나 만료 → 로그인 폼으로
+      unawaited(_authLost(e.message));
+      throw CubeDirectoryError(e.message);
     }
   }
 
-  void _connect(String id) {
-    connect(context, id, password: CubeRemoteConfig.fixedPassword);
+  Future<void> _authLost(String message) async {
+    await CubeViewerApi.logout();
+    if (mounted) {
+      setState(() {
+        _loggedIn = false;
+        _loginError = message;
+      });
+    }
   }
 
-  // 파일 전송 모드로 접속(원격 PC와 파일/이미지 주고받기).
-  void _connectFile(String id) {
-    connect(context, id,
-        password: CubeRemoteConfig.fixedPassword, isFileTransfer: true);
+  Future<void> _checkVersion() async {
+    final info = await CubeViewerApi.appVersion();
+    final mine = await CubeViewerApi.ownVersionCode();
+    if (!mounted || info == null || mine == null) return;
+    final remote = info['versionCode'];
+    final code = remote is int ? remote : int.tryParse('$remote');
+    if (code != null && code > mine && info['androidAvailable'] == true) {
+      setState(() => _newVersionLabel = (info['version'] ?? '$code').toString());
+    }
+  }
+
+  Future<void> _login() async {
+    final code = _codeController.text.trim();
+    if (code.isEmpty) return;
+    setState(() { _loggingIn = true; _loginError = null; });
+    try {
+      await CubeViewerApi.login(code);
+      _codeController.clear();
+      if (mounted) setState(() { _loggedIn = true; _loggingIn = false; });
+      _load();
+      _checkVersion();
+    } catch (e) {
+      if (mounted) setState(() { _loggingIn = false; _loginError = '$e'; });
+    }
+  }
+
+  Future<void> _logout() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('로그아웃'),
+        content: const Text('이 기기에서 로그아웃할까요? 다시 쓰려면 접속코드를 입력해야 합니다.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('로그아웃')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await CubeViewerApi.logout();
+    if (mounted) setState(() { _loggedIn = false; _loginError = null; });
+  }
+
+  // 접속 직전에 콘솔에서 비밀번호를 받아 접속한다. 가맹점 이름은 원격 화면 하단바·알림에 쓴다.
+  Future<void> _connect(String id, String name, {bool isFileTransfer = false}) async {
+    if (_connecting != null) return;
+    setState(() => _connecting = id);
+    try {
+      final pw = await CubeViewerApi.credential(id);
+      CubeViewerApi.peerNames[id] = name;
+      if (!mounted) return;
+      connect(context, id, password: pw, isFileTransfer: isFileTransfer);
+    } on CubeAuthException catch (e) {
+      await _authLost(e.message);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('접속 정보를 받지 못했습니다: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _connecting = null);
+    }
+  }
+
+  Future<void> _openUpdate() async {
+    try {
+      await launchUrl(CubeViewerApi.androidDownloadUri(),
+          mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
+  Widget _loginView() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Icon(Icons.store_mall_directory, size: 48),
+              const SizedBox(height: 12),
+              const Text('가맹점 원격 접속',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              const Text('관리자에게 받은 접속코드를 입력하세요.',
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 18),
+              TextField(
+                controller: _codeController,
+                obscureText: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _login(),
+                decoration: const InputDecoration(
+                  labelText: '접속코드',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (_loginError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(_loginError!,
+                      style: const TextStyle(color: Colors.redAccent)),
+                ),
+              const SizedBox(height: 14),
+              ElevatedButton(
+                onPressed: _loggingIn ? null : _login,
+                child: _loggingIn
+                    ? const SizedBox(
+                        width: 18, height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('로그인'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _updateBanner() {
+    return MaterialBanner(
+      backgroundColor: Colors.amber.shade100,
+      leading: const Icon(Icons.system_update),
+      content: Text('새 버전 $_newVersionLabel 이(가) 있습니다. 설치하면 기존 앱 위에 덮어써집니다.'),
+      actions: [
+        TextButton(
+            onPressed: () => setState(() => _dismissedUpdate = true),
+            child: const Text('나중에')),
+        ElevatedButton(onPressed: _openUpdate, child: const Text('설치')),
+      ],
+    );
   }
 
   Future<void> _openConsole() async {
@@ -139,9 +284,12 @@ class _CubeDevicesPageState extends State<CubeDevicesPage>
       }
     }
 
+    if (!_loggedIn) return Scaffold(body: _loginView());
+
     return Scaffold(
       body: Column(
         children: [
+          if (_newVersionLabel != null && !_dismissedUpdate) _updateBanner(),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
             child: Row(
@@ -163,6 +311,11 @@ class _CubeDevicesPageState extends State<CubeDevicesPage>
                   tooltip: '콘솔 열기(편집/순서/그룹)',
                   icon: const Icon(Icons.open_in_new),
                   onPressed: _openConsole,
+                ),
+                IconButton(
+                  tooltip: '${CubeViewerApi.operator} 로그아웃',
+                  icon: const Icon(Icons.logout),
+                  onPressed: _logout,
                 ),
               ],
             ),
@@ -286,10 +439,15 @@ class _CubeDevicesPageState extends State<CubeDevicesPage>
             IconButton(
                 tooltip: '파일 전송',
                 icon: const Icon(Icons.folder_open),
-                onPressed: () => _connectFile(id)),
+                onPressed: () => _connect(id, name, isFileTransfer: true)),
             const SizedBox(width: 8),
             ElevatedButton(
-                onPressed: () => _connect(id), child: const Text('연결')),
+                onPressed: () => _connect(id, name),
+                child: _connecting == id
+                    ? const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('연결')),
           ]),
         ]),
       ),

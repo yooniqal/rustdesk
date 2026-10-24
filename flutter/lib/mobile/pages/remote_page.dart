@@ -19,6 +19,7 @@ import 'package:provider/provider.dart';
 
 import '../../common.dart';
 import '../../cuberemote_key_capture.dart';
+import '../../cuberemote_api.dart';
 import '../../cuberemote_session_keepalive.dart';
 import '../../common/widgets/overlay.dart';
 import '../../common/widgets/dialog.dart';
@@ -77,6 +78,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   // 묻혀 "다시 올리는 게 안 보인다"는 보고. 손잡이 하나로 통일하고 흰 테두리·그림자를 준다.
   static const _kBarAutoHide = Duration(seconds: 5);
   Timer? _barAutoHideTimer;
+  // CubeRemote: 콘솔 접속 기록(누가 어느 매장에 언제). 기록 실패는 세션에 영향 없음.
+  int? _cubeSessionId;
+  String get _cubePeerName => CubeViewerApi.peerNames[widget.id] ?? '';
   bool _showGestureHelp = false;
   bool _showKeyTools = false;
   String _value = initText;   // 입력창(_textController)도 initText 로 시작한다 — 같은 값이어야 diff 가 성립
@@ -140,7 +144,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     });
     WakelockManager.enable(_uniqueKey);
     // 백그라운드로 나가도 세션이 끊기지 않도록 프로세스를 붙잡아 둔다(알림바에 "연결 중" 표시).
-    CubeSessionKeepAlive.start(widget.id);
+    CubeSessionKeepAlive.start(
+        _cubePeerName.isEmpty ? widget.id : _cubePeerName);
+    CubeViewerApi.sessionStart(widget.id).then((sid) => _cubeSessionId = sid);
     // 물리 키보드의 Alt+Tab·Win 조합이 안드로이드 앱 전환 대신 원격으로 가게 한다.
     unawaited(CubeKeyCapture.setEnabled(true));
     _barHidden = bind.mainGetLocalOption(key: _kOptionHideBar) == 'Y';
@@ -195,6 +201,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     // 세션이 끝났으므로 프로세스를 붙잡아 둘 이유가 없다. sessionClose 와 같이 앞쪽에서
     // 처리해야 뒤쪽 await 들이 중단돼도 알림이 남지 않는다.
     unawaited(CubeSessionKeepAlive.stop());
+    unawaited(CubeViewerApi.sessionEnd(_cubeSessionId));
     unawaited(CubeKeyCapture.setEnabled(false));
     // https://github.com/flutter/flutter/issues/64935
     super.dispose();
@@ -780,6 +787,17 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       },
                     ),
                   ]))),
+          // CubeRemote: 어느 매장에 붙어 있는지. 여러 매장을 연달아 볼 때 실수 방지.
+          if (_cubePeerName.isNotEmpty)
+            Expanded(
+              child: Text(
+                _cubePeerName,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+              ),
+            ),
           Obx(() => GestureDetector(
                 // 길게 누르면 완전 숨김(둥근 버튼도 없음). 아래 가운데 손잡이로 되돌린다.
                 onLongPress: gFFI.ffiModel.waitForFirstImage.isTrue

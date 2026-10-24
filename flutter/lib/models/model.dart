@@ -1389,6 +1389,11 @@ class FfiModel with ChangeNotifier {
       final optLocal = bind.mainGetLocalOption(key: kOptionTouchMode);
       if (optLocal != '') {
         _touchMode = optLocal == 'Y';
+      } else if (isMobile) {
+        // CubeRemote: 폰·태블릿에서 PC 에 붙을 때는 사용자가 직접 고르기 전까지 마우스 모드.
+        // 세션(피어) 옵션에 남아 있던 터치 모드 때문에 "터치할 때마다 그 자리로 클릭되고 화면이
+        // 밀린다"는 상담이 기기마다 반복됐다(DEPLOY.md). 직접 고른 값(로컬 옵션)은 그대로 존중.
+        _touchMode = false;
       } else {
         final optSession = await bind.sessionGetOption(
             sessionId: sessionId, arg: kOptionTouchMode);

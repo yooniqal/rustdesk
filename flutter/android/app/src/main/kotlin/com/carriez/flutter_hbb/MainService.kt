@@ -17,6 +17,7 @@ import android.app.PendingIntent.FLAG_UPDATE_CURRENT
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.content.res.Configuration.ORIENTATION_LANDSCAPE
 import android.graphics.Color
@@ -245,7 +246,7 @@ class MainService : Service() {
         val configPath = prefs.getString(KEY_APP_DIR_CONFIG_PATH, "") ?: ""
         FFI.startServer(configPath, "")
 
-        createForegroundNotification()
+        createForegroundNotification(withProjection = false)
     }
 
     override fun onDestroy() {
@@ -327,7 +328,10 @@ class MainService : Service() {
         Log.d("whichService", "this service: ${Thread.currentThread()}")
         super.onStartCommand(intent, flags, startId)
         if (intent?.action == ACT_INIT_MEDIA_PROJECTION_AND_SERVICE) {
-            createForegroundNotification()
+            // 34 부터 mediaProjection 타입은 사용자가 화면 캡처에 동의한 뒤(결과 intent 가 있을 때)에만 허용된다.
+            createForegroundNotification(
+                withProjection = intent.getParcelableExtra<Intent>(EXT_MEDIA_PROJECTION_RES_INTENT) != null
+            )
 
             if (intent.getBooleanExtra(EXT_INIT_FROM_BOOT, false)) {
                 FFI.startService()
@@ -617,7 +621,7 @@ class MainService : Service() {
     }
 
     @SuppressLint("UnspecifiedImmutableFlag")
-    private fun createForegroundNotification() {
+    private fun createForegroundNotification(withProjection: Boolean) {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
             action = Intent.ACTION_MAIN
@@ -642,7 +646,25 @@ class MainService : Service() {
             .setColor(ContextCompat.getColor(this, R.color.primary))
             .setWhen(System.currentTimeMillis())
             .build()
-        startForeground(DEFAULT_NOTIFY_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(DEFAULT_NOTIFY_ID, notification, foregroundServiceType(withProjection))
+        } else {
+            startForeground(DEFAULT_NOTIFY_ID, notification)
+        }
+    }
+
+    // targetSdk 34 포팅(업스트림 MainService.foregroundServiceType 을 줄인 것).
+    // 동의 전에는 specialUse 만, 동의 결과가 있으면 mediaProjection 을 더한다.
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun foregroundServiceType(withProjection: Boolean): Int {
+        var serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            serviceType = serviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        }
+        if (withProjection) {
+            serviceType = serviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+        }
+        return serviceType
     }
 
     private fun loginRequestNotification(
