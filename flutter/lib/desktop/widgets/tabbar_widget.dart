@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show exit;
 import 'dart:math';
 import 'dart:ui' as ui;
 
@@ -8,6 +9,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide TabBarTheme;
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/consts.dart';
+import 'package:flutter_hbb/cuberemote_support_reporter.dart';
 import 'package:flutter_hbb/desktop/pages/remote_page.dart';
 import 'package:flutter_hbb/desktop/pages/view_camera_page.dart';
 import 'package:flutter_hbb/main.dart';
@@ -466,6 +468,12 @@ class _DesktopTabState extends State<DesktopTab>
     }
 
     await _saveFrame(flush: true);
+
+    // CubeRemote 지원 프로그램은 창을 닫으면 숨지 않고 끝난다 — 닫은 뒤에도 접속되면 안 된다.
+    if (isMainWindow && CubeSupportReporter.enabled) {
+      await CubeSupportReporter.stop();
+      exit(0);
+    }
 
     // hide window on close
     if (isMainWindow) {

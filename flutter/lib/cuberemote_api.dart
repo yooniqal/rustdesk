@@ -122,6 +122,25 @@ class CubeViewerApi {
     return ((_decode(res) as Map)['password'] ?? '').toString();
   }
 
+  /// 일회성 지원 요청 — 콘솔 /s 의 지원 프로그램이 지금 켜져 있는 PC(cuberemote_support_reporter.dart).
+  static Future<List<dynamic>> supportRequests() async {
+    if (!loggedIn) throw CubeAuthException('로그인이 필요합니다.');
+    final res = await http
+        .get(_u('/api/viewer/support'), headers: await _headers())
+        .timeout(_timeout);
+    return _decode(res) as List<dynamic>;
+  }
+
+  /// 지원 프로그램이 마지막으로 보고한 일회용 비밀번호. 프로그램이 닫혔으면 404 → 예외.
+  static Future<String> supportCredential(String id) async {
+    if (!loggedIn) throw CubeAuthException('로그인이 필요합니다.');
+    final res = await http
+        .get(_u('/api/viewer/support/$id/credential'), headers: await _headers())
+        .timeout(_timeout);
+    if (res.statusCode == 404) throw '지원 프로그램이 닫혔습니다.';
+    return ((_decode(res) as Map)['password'] ?? '').toString();
+  }
+
   /// 접속 기록 시작. 기록은 부가 기능이므로 실패해도 세션을 막지 않는다(null).
   static Future<int?> sessionStart(String deviceId) async {
     if (!loggedIn) return null;

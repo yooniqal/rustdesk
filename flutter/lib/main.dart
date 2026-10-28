@@ -24,6 +24,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'common.dart';
+import 'cuberemote_support_reporter.dart';
 import 'consts.dart';
 import 'mobile/pages/home_page.dart';
 import 'mobile/pages/server_page.dart';
@@ -143,6 +144,7 @@ void runMainApp(bool startService) async {
     gFFI.serverModel.startService();
     bind.pluginSyncUi(syncTo: kAppTypeMain);
     bind.pluginListReload();
+    CubeSupportReporter.start();
   }
   await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
   gFFI.userModel.refreshCurrentUser();
