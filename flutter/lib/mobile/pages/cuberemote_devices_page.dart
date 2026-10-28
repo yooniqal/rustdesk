@@ -8,6 +8,7 @@ import '../../common.dart';
 import '../../cuberemote_api.dart';
 import '../../cuberemote_config.dart';
 import '../../models/cube_device_directory.dart';
+import '../../models/platform_model.dart';
 import 'home_page.dart';
 
 // CubeRemote 가맹점 목록 탭. 운영자가 접속코드로 로그인하면 콘솔 뷰어 API에서 목록을 받아
