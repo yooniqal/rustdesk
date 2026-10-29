@@ -566,14 +566,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     // 접힌 바를 올리는 역할은 _barHandle 이 맡는다. FAB 은 키보드 내리기/패널 닫기에만 쓴다.
     final showActionButton =
         keyboardIsVisible || _showGestureHelp || _showKeyTools;
-    final showBarHandle = !_closing &&
-        !_showBar &&
-        !keyboardIsVisible &&
-        !_showGestureHelp &&
-        !_showKeyTools;
+    // 2026-10-29 "숨긴 뒤 시간이 지나면 손잡이가 아예 안 보인다": 키보드·패널 상태로 손잡이를
+    // 숨기던 조건을 뺀다. _showEdit 는 시스템이 키보드를 내려도 true 로 남아, 키보드 표시
+    // 여부가 잠깐이라도 잘못 보고되면 손잡이가 사라진 채 돌아오지 않았다. 바가 접혀 있으면 항상 보인다.
+    final showBarHandle = !_closing && !_showBar;
 
     return WillPopScope(
       onWillPop: () async {
+        // 바가 접혀 있으면 뒤로가기(버튼·제스처)는 바를 올린다 — 손잡이를 못 찾아도 되돌릴 수단.
+        // 바가 보일 때 한 번 더 뒤로가기 하면 기존처럼 접속을 끝낸다.
+        if (!_showBar && !_closing) {
+          _revealBar();
+          return false;
+        }
         if (mounted) setState(() => _closing = true);
         clientClose(sessionId, gFFI);
         return false;
@@ -806,7 +811,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         setState(() => _barHidden = true);
                         _setShowBar(false);
                         bind.mainSetLocalOption(key: _kOptionHideBar, value: 'Y');
-                        showToast('하단바를 숨겼습니다. 화면 아래 가운데 손잡이를 누르면 다시 나옵니다');
+                        showToast('하단바를 숨겼습니다. 화면 아래 손잡이나 뒤로가기로 다시 나옵니다');
                       },
                 child: IconButton(
                   color: Colors.white,

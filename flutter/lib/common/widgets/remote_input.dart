@@ -351,9 +351,14 @@ class _RawTouchGestureDetectorRegionState
           // 오른쪽 클릭은 onLongPressUp 에서(움직이지 않고 뗐을 때만). 여기서는 드래그 대기만.
           _mouseModeLongPressing = true;
           _mouseModeLongDragging = false;
-          _mouseModeLongPressLastPos =
-              _lastTapDownPositionForMouseMode ?? Offset.zero;
+          final p = _lastTapDownPositionForMouseMode;
+          _mouseModeLongPressLastPos = p ?? Offset.zero;
           HapticFeedback.lightImpact();
+          // 2026-10-29 "길게 눌러도 끌리지 않는다": 버튼은 커서 자리에서 눌리는데 사람은 손가락
+          // 밑의 아이콘을 끌려고 한다. 길게 누른 자리로 커서를 먼저 옮긴다(우클릭도 그 자리).
+          if (p != null && ffi.cursorModel.isInRemoteRect(p)) {
+            await ffi.cursorModel.move(p.dx, p.dy);
+          }
           return;
         }
       }
@@ -378,9 +383,11 @@ class _RawTouchGestureDetectorRegionState
         await _longPressDrag.begin();
         return;
       }
-      final delta = d.localPosition - _mouseModeLongPressLastPos;
+      // 끄는 동안 커서가 손가락 밑에 붙어 있게 절대 위치로 옮긴다.
       _mouseModeLongPressLastPos = d.localPosition;
-      await ffi.cursorModel.updatePan(delta, d.localPosition, handleTouch);
+      if (ffi.cursorModel.isInRemoteRect(d.localPosition)) {
+        await ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
+      }
       return;
     }
     if (!ffiModel.isPeerMobile) {
@@ -512,7 +519,8 @@ class _RawTouchGestureDetectorRegionState
     _scale = 1;
     _mouseScrollIntegral = 0;
     _twoFingerScroll.reset();
-    _useTwoFingerScroll = isMobile && !handleTouch && !widget.isCamera &&
+    // 2026-10-29: 터치 모드에서도 두 손가락 상하 이동 = 휠(예전엔 터치 모드는 항상 줌).
+    _useTwoFingerScroll = isMobile && !widget.isCamera &&
         !ffiModel.isPeerAndroid && inputModel.twoFingerScroll;
     if (isNotTouchBasedDevice()) {
       return;
@@ -564,8 +572,12 @@ class _RawTouchGestureDetectorRegionState
       }
       ffi.canvasModel.updateScale(d.scale / _scale, d.focalPoint);
       _scale = d.scale;
-      ffi.canvasModel.panX(d.focalPointDelta.dx);
-      ffi.canvasModel.panY(d.focalPointDelta.dy);
+      // 휠/줌을 가르는 경우(PC 원격)에는 줌하는 동안 화면을 손가락 따라 밀지 않는다 —
+      // "줌되면서 포커스가 움직인다". 확대 중심은 updateScale 의 focalPoint 가 잡는다.
+      if (!_useTwoFingerScroll) {
+        ffi.canvasModel.panX(d.focalPointDelta.dx);
+        ffi.canvasModel.panY(d.focalPointDelta.dy);
+      }
     }
   }
 
