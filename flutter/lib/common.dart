@@ -2653,6 +2653,11 @@ connect(BuildContext context, String id,
       });
     }
   } else {
+    // 모바일은 모든 세션이 같은 세션 ID(_constSessionId)를 쓴다. 이전 원격 화면이 비정상으로
+    // 끝나 세션이 남아 있으면 새 sessionAdd 가 "same session id is found" 로 조용히 실패하고
+    // 화면은 "연결 중"에서 멈춘다(2026-10-31 이글골프: 재접속 세 번이 모두 PC 에 닿지 않았고,
+    // 마지막 화면을 닫자 그제야 남아 있던 첫 연결이 끊겼다). 새로 열기 전에 남은 세션을 닫는다.
+    if (isMobile) await bind.sessionClose(sessionId: gFFI.sessionId);
     if (isFileTransfer) {
       if (isAndroid) {
         if (!await AndroidPermissionManager.check(kManageExternalStorage)) {
