@@ -114,7 +114,10 @@ class MainActivity : FlutterActivity() {
         val meta = event.metaState
         val hasAlt = (meta and KeyEvent.META_ALT_ON) != 0
         val hasMeta = (meta and KeyEvent.META_META_ON) != 0
-        if ((event.keyCode == KeyEvent.KEYCODE_TAB && hasAlt) || hasMeta) {
+        // Alt+F4 는 앱이 소비하지 않으면 삼성이 "앱 닫기"로 처리해 큐브원격이 꺼졌다(2026-10-31 보고).
+        // 원격 화면이 떠 있는 동안은 접근성 필터와 같은 목록(Alt+F4/Esc/Space, Ctrl+Shift+Esc)을 소비한다.
+        if ((event.keyCode == KeyEvent.KEYCODE_TAB && hasAlt) || hasMeta ||
+            (KeyCapture.wanted && KeyCapture.isSystemShortcut(event))) {
             return true
         }
         return handled
